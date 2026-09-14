@@ -1,2 +1,2 @@
 # blog-website
-a personnal website for 
+a personnal website for blogging and music
