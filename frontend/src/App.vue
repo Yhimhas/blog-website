@@ -1,30 +1,27 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
-import TheWelcome from './components/TheWelcome.vue'
+import introduction from "./components/introduction.vue";
+import { ref } from "vue";
+import type { Ref } from "vue";
+const headmsg: Ref<string> = ref("");
 </script>
 
 <template>
   <header>
-    <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="125" height="125" />
-
     <div class="wrapper">
-      <HelloWorld msg="You did it!" />
+      <h2>Welcome</h2>
     </div>
   </header>
 
   <main>
-    <TheWelcome />
+    <div>
+      <introduction msg="headmsg" />
+    </div>
   </main>
 </template>
 
 <style scoped>
 header {
   line-height: 1.5;
-}
-
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
 }
 
 @media (min-width: 1024px) {
