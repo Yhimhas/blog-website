@@ -8,11 +8,14 @@
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build"
+    "type-check": "vue-tsc --build",
+    "sync:music": "node scripts/sync-bilibili.mjs"
   },
   "dependencies": {
+    "@field-lab/vue": "file:vendor\\field-lab-vue-0.1.2.tgz",
     "pinia": "^4.0.2",
-    "vue": "^3.5.40"
+    "vue": "^3.5.40",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",
