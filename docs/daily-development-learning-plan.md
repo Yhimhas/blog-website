@@ -1,5 +1,7 @@
 # 个人网站每日开发与学习计划
 
+> 2026-09-21 更新：现在由助手负责前端，你学习 Go 并实现后端。当前前端为 `frontend/` 下的 Vue + Vite。请先阅读 [Go 后端协作手册](backend-development-guide.md)，本文保留为早期计划参考，尚未执行 Nuxt 迁移。
+
 编排日期：2026-09-14 · 每天 2 小时 · 你编写实现，助手负责讲解、提示和 Review
 
 依据：[原始开发方案](./personal-website-development-plan.md)。配套阅读：[代码注意事项与自查清单](./code-notes-and-review-checklist.md)。
