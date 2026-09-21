@@ -1,5 +1,12 @@
 <script setup lang="ts">
 defineProps<{ name: string }>()
+// Original PNGs from IgnoredOne iconpack02; provenance is recorded beside the files.
+const assets: Record<string, string> = {
+  play: '/icons/ignoredone/play.png',
+  previous: '/icons/ignoredone/previous.png',
+  next: '/icons/ignoredone/next.png',
+  sparkle: '/icons/ignoredone/sparkle.png',
+}
 const paths: Record<string, string> = {
   search: 'm21 21-5-5 M19 10.5a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0',
   heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z',
@@ -14,4 +21,10 @@ const paths: Record<string, string> = {
   note: 'M9 18V5l12-2v13 M9 8l12-2 M9 18a3 3 0 1 1-3-3h3 M21 16a3 3 0 1 1-3-3h3',
 }
 </script>
-<template><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="paths[name] || paths.note" /></svg></template>
+<template>
+  <span v-if="assets[name]" class="music-icon-asset" :style="{ maskImage: `url(${assets[name]})`, WebkitMaskImage: `url(${assets[name]})` }" aria-hidden="true" />
+  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="paths[name] || paths.note" /></svg>
+</template>
+<style scoped>
+.music-icon-asset { display: inline-block; width: 22px; height: 22px; flex-shrink: 0; background: currentColor; mask-repeat: no-repeat; mask-position: center; mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-mask-size: contain; }
+</style>
