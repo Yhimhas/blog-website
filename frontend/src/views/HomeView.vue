@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import SiteIcon from "../components/SiteIcon.vue";
 import { RouterLink } from "vue-router"
 </script>
 <template>
       <section id="home" class="hero">
         <div class="hero-copy">
           <div class="eyebrow">
-            <span class="small-cross">✳</span> A PERSONAL SPACE ON THE INTERNET
+            <SiteIcon class="small-cross" name="sparkle" /> A PERSONAL SPACE ON THE INTERNET
           </div>
           <h1>
             在代码与旋律之间，<br />记录<span class="outlined">正在发生</span
@@ -13,8 +14,8 @@ import { RouterLink } from "vue-router"
           </h1>
           <div class="hero-actions">
             <RouterLink class="primary-link" to="/blog"
-              >探索我的文字 <span>↗</span></RouterLink
-            ><RouterLink class="quiet-link" to="/music">听见日常 <span>↗</span></RouterLink>
+              >探索我的文字 <SiteIcon name="arrow" /></RouterLink
+            ><RouterLink class="quiet-link" to="/music">听见日常 <SiteIcon name="arrow" /></RouterLink>
           </div>
           <div class="hero-footnote">
             <span>独立记录 / 持续生长</span><span>EST. 2026 <i>↘</i></span>
@@ -31,7 +32,7 @@ import { RouterLink } from "vue-router"
       <div class="index-strip">
         <span><b>01—04</b> PERSONAL ARCHIVE</span
         ><span>BUILD THINGS. COLLECT MOMENTS.</span
-        ><RouterLink to="/blog">进入博客 ↗</RouterLink>
+        ><RouterLink to="/blog">进入博客 <SiteIcon name="arrow" /></RouterLink>
       </div>
       <!-- <section id="about" class="about-section">
         <div>
