@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SiteIcon from "./components/SiteIcon.vue";
 import { computed, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { FieldProvider } from "@field-lab/vue";
@@ -52,8 +53,8 @@ function dismissNavigation() {
 const content = ref<HTMLElement>();
 const nav = [
   { path: "/", label: "首页", symbol: "⌂" },
-  { path: "/blog", label: "博客", symbol: "≡" },
-  { path: "/music", label: "音乐", symbol: "♫" },
+  { path: "/blog", label: "博客", symbol: "layers" },
+  { path: "/music", label: "音乐", symbol: "wave" },
 ];
 const active = computed(() =>
   route.path.startsWith("/blog") ? "/blog" : route.path,
@@ -130,7 +131,7 @@ function onPageEntered() {
                 :aria-current="active === item.path ? 'page' : undefined"
                 @click="expanded = false"
               >
-                <span class="f-rail__icon" aria-hidden="true">{{ item.symbol }}</span
+                <span class="f-rail__icon" aria-hidden="true"><SiteIcon v-if="item.path !== '/'" :name="item.symbol" /><template v-else>{{ item.symbol }}</template></span
                 ><span class="f-rail__label">{{ item.label }}</span>
               </RouterLink>
             </div>
@@ -172,7 +173,7 @@ function onPageEntered() {
                 />Yhimhas<span> / </span>NOTES</RouterLink
               >
               <span>© {{ new Date().getFullYear() }}</span>
-              <a href="#page-content">回到顶部 ↑</a>
+              <a href="#page-content">回到顶部 <SiteIcon name="up" /></a>
             </footer>
           </div>
         </div>
