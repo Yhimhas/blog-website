@@ -1,4 +1,5 @@
 import bilibiliPlaylist from "./data/bilibili-playlist.json"
+import neteasePlaylist from "./data/netease-playlist.json"
 
 /** 站点歌单配置。收到真实歌单链接并验证曲目后填写，不使用示例歌曲冒充平台数据。 */
 export interface PlatformTrack {
@@ -17,10 +18,15 @@ export interface PlatformPlaylist {
   tracks: PlatformTrack[]
   syncedAt?: string
   sourceCount?: number
+  /** 已登记但未能读取曲目时，不将空数组当作空歌单。 */
+  syncStatus?: 'pending' | 'ready'
   /** 平台提供整张歌单播放器时使用；与逐曲播放器互斥显示。 */
   embedUrl?: string
 }
-export const platformPlaylists: PlatformPlaylist[] = [{ ...bilibiliPlaylist, platform: "bilibili" }]
+export const platformPlaylists: PlatformPlaylist[] = [
+  { ...bilibiliPlaylist, platform: "bilibili", syncStatus: 'ready' },
+  { ...neteasePlaylist, platform: 'netease', syncStatus: 'pending' },
+]
 
 export function officialEmbed(url?: string): string | undefined {
   if (!url) return undefined
