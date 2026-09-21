@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SiteIcon from "../components/SiteIcon.vue";
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { posts } from '../content'
@@ -19,7 +20,7 @@ const post = computed(() => posts.find(item => item.id === props.id))
       <p class="reading-intro">{{ post.summary }}</p>
       <div class="markdown-body" v-html="post.html" />
     </div>
-    <div class="article-end"><span>— END OF NOTE —</span><RouterLink to="/blog" class="primary-link">← 返回文章列表</RouterLink></div>
+    <div class="article-end"><span>— END OF NOTE —</span><RouterLink to="/blog" class="primary-link"><SiteIcon name="back" /> 返回文章列表</RouterLink></div>
   </article>
-  <section v-else class="not-found"><div class="eyebrow">404 / JOURNAL</div><h1>这篇文章不存在</h1><p>文章地址可能有误，去列表看看其他文字吧。</p><RouterLink class="primary-link" to="/blog">返回文章列表 ↗</RouterLink></section>
+  <section v-else class="not-found"><div class="eyebrow">404 / JOURNAL</div><h1>这篇文章不存在</h1><p>文章地址可能有误，去列表看看其他文字吧。</p><RouterLink class="primary-link" to="/blog">返回文章列表 <SiteIcon name="arrow" /></RouterLink></section>
 </template>
