@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { posts } from '../content'
-const route = useRoute()
-const post = computed(() => posts.find(item => item.id === route.params.id))
+// Route props retain the outgoing article while its leave animation finishes.
+const props = defineProps<{ id: string }>()
+const post = computed(() => posts.find(item => item.id === props.id))
 </script>
 
 <template>

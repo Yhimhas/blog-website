@@ -93,3 +93,17 @@
 - 新增有用文件：scripts/sync-bilibili.mjs、src/musicSources.ts、src/data/bilibili-playlist.json。没有新增试验文件。
 - 最新有效构建：index-DHrfmSoD.css、index-DD9Nv3tC.js；本次被替代但保留的产物：index-xKpHSeSn.css、index-U5Cv1BcR.js、index-CXy-7CW8.js。更早产物仍保留。
 - 官方播放器参数说明：https://player.bilibili.com/
+
+## 2026-09-21 路由分层过渡与后端协作
+
+- 当前协作入口：../docs/backend-development-guide.md。助手实现前端，用户学习 Go 并实现后端；未创建后端服务或更改现有音乐播放方式。
+- App.vue 用 RouterView slot + Vue Transition 包裹完整页面布局，mode=out-in，key 使用 path；查询参数变化不重新挂载页面，音乐页的独立布局与内容一起过渡。
+- 延续 EntryIntro 的斜向 polygon 裁切、22px 内容上浮：退出 220ms，入场 460ms，总计约 680ms；内容分组延迟 40/80ms。未新增动效依赖。
+- pageTransition.ts 在目标 DOM 入场后释放路由滚动；忽略已过期导航的滚动结果。历史滚动使用 instant，避免和全局 smooth 叠加。动画结束后仅当焦点仍在 body 时聚焦 main，避免抢走正在输入的搜索框。
+- ArticleView 改用路由 props，退出时保留旧文章内容，避免 route.params 更新导致暂时显示 404。补齐初始首页标题的默认值和 meta 监听。
+- 暂停动态与 prefers-reduced-motion 将路由及分组动画缩短为 1ms；保留正常导航。
+- 验证：最终 pnpm run build -- --emptyOutDir=false 通过（vue-tsc + Vite）；浏览器验证首页→博客→文章→博客→音乐、搜索筛选、文章退出内容、暂停动态、历史返回恢复非零滚动位置、连续前进/后退最终 URL 与内容一致。1440px 桌面和 390px 窄屏检查；窄屏无横向溢出；浏览器 error/warn 日志为空。
+- 未实测系统 reduced-motion 切换、真实触屏、Safari/Firefox 或设备帧率；系统偏好规则只做代码检查。纯音频和 Go API 尚未实现。
+- 构建环境提示 Node v20.19.5 低于 package.json 声明的 ^22.18.0 || >=24.12.0；本次构建成功，未替用户升级环境。
+- 当前构建资源：dist/assets/index-B82AM5Le.css、dist/assets/index-Dju8uhgG.js。
+- 本轮中间构建残留：dist/assets/index-qsMTnISV.js（已被最终 JS 替代，保留未删）。没有新增截图、测试脚本或音频文件；原有旧 dist 资源未清理。类型检查缓存为正常构建产物。

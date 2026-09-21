@@ -1,5 +1,39 @@
 @import '@field-lab/vue/style.css';
 
+/* Echo the intro's diagonal wipe; mount only one page during navigation. */
+.route-scene { min-height: 100dvh; }
+.page-scene-enter-active { animation: page-uncover 460ms cubic-bezier(.22, 1, .36, 1) both; }
+.page-scene-leave-active { animation: page-dismiss 220ms cubic-bezier(.76, 0, .24, 1) both; pointer-events: none; }
+.page-scene-enter-active :is(.hero-copy, .section-header, .article-header, .rain-header, .not-found) {
+  animation: page-rise 420ms 40ms cubic-bezier(.22, 1, .36, 1) both;
+}
+.page-scene-enter-active :is(.index-strip, .journal-layout, .reading-body, .rain-player, .rain-library) {
+  animation: page-rise 380ms 80ms cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes page-uncover {
+  from { clip-path: polygon(0 0, 0 0, -25% 100%, 0 100%); opacity: .35; }
+  to { clip-path: polygon(0 0, 125% 0, 100% 100%, 0 100%); opacity: 1; }
+}
+@keyframes page-dismiss {
+  from { clip-path: polygon(0 0, 125% 0, 100% 100%, 0 100%); opacity: 1; }
+  to { clip-path: polygon(0 0, 0 0, -25% 100%, 0 100%); opacity: .2; }
+}
+@keyframes page-rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.motion-paused :is(.page-scene-enter-active, .page-scene-leave-active),
+.motion-paused :is(.page-scene-enter-active, .page-scene-leave-active) * {
+  animation-duration: 1ms !important; animation-delay: 0ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  :is(.page-scene-enter-active, .page-scene-leave-active),
+  :is(.page-scene-enter-active, .page-scene-leave-active) * {
+    animation-duration: 1ms !important; animation-delay: 0ms !important;
+  }
+}
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 28px; }
 body { margin: 0; background: #eeefe9; color: #23271f; }
