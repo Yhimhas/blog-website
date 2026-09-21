@@ -1,77 +1,590 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import MusicIcon from '../components/MusicIcon.vue'
-import { officialEmbed, platformPlaylists } from '../musicSources'
-import '../assets/music.css'
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { RouterLink } from "vue-router";
+import MusicIcon from "../components/MusicIcon.vue";
+import { officialEmbed, platformPlaylists } from "../musicSources";
+import { dailySelection, shanghaiDate } from "../musicDaily";
+import "../assets/music-atlus.css";
 
-const tabs = ['发现', '音乐库', '我的收藏']
-const activeTab = ref('音乐库')
-const query = ref('')
-const platform = ref<'netease' | 'bilibili'>('bilibili')
-const selectedPlaylist = ref('')
-const selectedTrack = ref('')
-const favorites = ref<string[]>([])
-const notice = ref('')
-const playerOpen = ref(false)
-const currentPlaylist = computed(() => platformPlaylists.find(item => item.id === selectedPlaylist.value && item.platform === platform.value) || platformPlaylists.find(item => item.platform === platform.value))
-const currentTrack = computed(() => currentPlaylist.value?.tracks.find(item => item.id === selectedTrack.value) || currentPlaylist.value?.tracks[0])
-const embedUrl = computed(() => officialEmbed(currentTrack.value?.embedUrl || currentPlaylist.value?.embedUrl))
-const platformName = computed(() => platform.value === 'netease' ? '网易云音乐' : '哔哩哔哩')
-const panelVisible = computed(() => activeTab.value !== '发现' || !!query.value.trim())
-const filteredPlaylists = computed(() => platformPlaylists.filter(item => item.platform === platform.value).map(item => ({
-  ...item,
-  tracks: item.tracks.filter(track => (activeTab.value !== '我的收藏' || favorites.value.includes(track.id)) && `${track.title} ${track.artist}`.toLowerCase().includes(query.value.trim().toLowerCase())),
-})).filter(item => item.tracks.length || (activeTab.value !== '我的收藏' && !query.value.trim())))
-function switchPlatform(value: 'netease' | 'bilibili') { platform.value = value; selectedPlaylist.value = ''; selectedTrack.value = ''; playerOpen.value = false; query.value = '' }
-function choose(playlistId: string, trackId = '') { selectedPlaylist.value = playlistId; selectedTrack.value = trackId; playerOpen.value = true }
+type Scene = "discover" | "library" | "favorites";
+const tabs = [
+  {
+    id: "discover" as const,
+    label: "发现",
+    en: "DISCOVER",
+  },
+  {
+    id: "library" as const,
+    label: "音乐库",
+    en: "COLLECTION",
+  },
+  {
+    id: "favorites" as const,
+    label: "我的收藏",
+    en: "FAVORITES",
+  },
+];
+const backgrounds = [
+  { name: "Aegis", url: "/music-golden-rain.jpeg", focalPoint: "68% 42%" },
+  { name: "Yukari", url: "/music-blue-rain.jpeg", focalPoint: "68% 42%" },
+  { name: "Makoto", url: "/music-pink-rain.jpeg", focalPoint: "50% 42%" },
+];
+const backgroundChoices = ref<Record<Scene, number>>({
+  discover: 0,
+  library: 1,
+  favorites: 2,
+});
+const activeTab = ref<Scene>("discover");
+const scene = computed(() => tabs.find((tab) => tab.id === activeTab.value)!);
+const backgroundIndex = computed(
+  () => backgroundChoices.value[activeTab.value],
+);
+const background = computed(() => backgrounds[backgroundIndex.value]!);
+const motionOff = ref(false);
+const direction = ref(1);
+const query = ref("");
+const platform = ref<"all" | "netease" | "bilibili">("all");
+const platforms = [
+  { id: 'all' as const, name: '全部' },
+  { id: 'bilibili' as const, name: 'Bilibili' },
+  { id: 'netease' as const, name: '网易云' },
+];
+const platformIndex = computed(() => platforms.findIndex(item => item.id === platform.value));
+const trackList = ref<HTMLElement>();
+function resetTrackScroll() {
+  if (trackList.value) trackList.value.scrollTop = 0;
+}
+const selectedId = ref("");
+const favorites = ref<string[]>([]);
+const notice = ref("");
+const playerOpen = ref(false);
+const selectedPlaylistId = ref('');
+const neteasePlaylist = platformPlaylists.find(item => item.id === 'netease:595975585');
+const pendingPlaylist = computed(() => activeTab.value === 'library' && platform.value === 'netease' && neteasePlaylist?.syncStatus === 'pending');
+const day = ref(shanghaiDate());
+const allTracks = platformPlaylists.flatMap((playlist) =>
+  playlist.tracks.map((track) => ({
+    ...track,
+    playlistId: playlist.id,
+    playlistTitle: playlist.title,
+    platform: playlist.platform,
+  })),
+);
+const uniqueTracks = [
+  ...new Map(allTracks.map((track) => [track.id, track])).values(),
+];
+const recommendations = computed(() => dailySelection(uniqueTracks, day.value));
+const currentTrack = computed(
+  () =>
+    selectedPlaylistId.value ? undefined : (uniqueTracks.find((track) => track.id === selectedId.value) ||
+    recommendations.value[0]),
+);
+const currentPlaylist = computed(() =>
+  platformPlaylists.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
+);
+const embedUrl = computed(() => officialEmbed(currentTrack.value?.embedUrl || currentPlaylist.value?.embedUrl));
+function openPlaylist(id: string) {
+  selectedPlaylistId.value = id;
+  selectedId.value = '';
+  playerOpen.value = true;
+}
+const favoriteCount = computed(
+  () =>
+    uniqueTracks.filter((track) => favorites.value.includes(track.id)).length,
+);
+const searching = computed(() => Boolean(query.value.trim()));
+const showingDaily = computed(
+  () => activeTab.value === "discover" && !searching.value,
+);
+const visibleTracks = computed(() => {
+  const source = showingDaily.value ? recommendations.value : uniqueTracks;
+  return source.filter(
+    (track) =>
+      (activeTab.value !== "favorites" || favorites.value.includes(track.id)) &&
+      (activeTab.value === "discover" ||
+        platform.value === "all" ||
+        track.platform === platform.value) &&
+      `${track.title} ${track.artist}`
+        .toLowerCase()
+        .includes(query.value.trim().toLowerCase()),
+  );
+});
+const panelTitle = computed(() =>
+  searching.value
+    ? "搜索结果"
+    : showingDaily.value
+      ? "每日推荐"
+      : scene.value.label,
+);
+const panelEnglish = computed(() =>
+  searching.value
+    ? "SEARCH RESULTS"
+    : showingDaily.value
+      ? "DAILY MIX"
+      : scene.value.en,
+);
+function switchTab(id: Scene) {
+  direction.value =
+    tabs.findIndex((tab) => tab.id === id) >=
+    tabs.findIndex((tab) => tab.id === activeTab.value)
+      ? 1
+      : -1;
+  activeTab.value = id;
+  query.value = "";
+  platform.value = "all";
+}
+function moveTab(event: KeyboardEvent) {
+  if (
+    ![
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+    ].includes(event.key)
+  )
+    return;
+  event.preventDefault();
+  const index = tabs.findIndex((tab) => tab.id === activeTab.value);
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (index +
+            (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) +
+            tabs.length) %
+          tabs.length;
+  switchTab(tabs[next]!.id);
+  (event.currentTarget as HTMLElement)
+    .querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    [next]?.focus();
+}
+function choose(id: string) {
+  selectedPlaylistId.value = '';
+  selectedId.value = id;
+  playerOpen.value = true;
+}
+function togglePlayer() {
+  // Pin the selected track before opening; the daily list can change at midnight.
+  if (!playerOpen.value && currentTrack.value)
+    selectedId.value = currentTrack.value.id;
+  playerOpen.value = !playerOpen.value;
+}
 function stepTrack(direction: number) {
-  const playlist = currentPlaylist.value
-  if (!playlist?.tracks.length) return
-  const index = playlist.tracks.findIndex(track => track.id === currentTrack.value?.id)
-  const track = playlist.tracks[(index + direction + playlist.tracks.length) % playlist.tracks.length]
-  if (track) choose(playlist.id, track.id)
+  const queue = currentPlaylist.value?.tracks || [];
+  if (queue.length < 2) return;
+  const index = queue.findIndex((track) => track.id === currentTrack.value?.id);
+  const track = queue[(index + direction + queue.length) % queue.length];
+  if (track) choose(track.id);
 }
 function favorite(id: string) {
-  favorites.value = favorites.value.includes(id) ? favorites.value.filter(item => item !== id) : [...favorites.value, id]
-  try { localStorage.setItem('lin-music-favorites', JSON.stringify(favorites.value)) } catch { notice.value = '当前浏览器无法保存收藏，本次浏览仍可使用。' }
+  favorites.value = favorites.value.includes(id)
+    ? favorites.value.filter((item) => item !== id)
+    : [...favorites.value, id];
+  try {
+    localStorage.setItem(
+      "lin-music-favorites",
+      JSON.stringify(favorites.value),
+    );
+  } catch {
+    notice.value = "收藏暂时无法保存到浏览器，本次浏览仍可使用。";
+  }
 }
+function cycleBackground() {
+  backgroundChoices.value[activeTab.value] =
+    (backgroundIndex.value + 1) % backgrounds.length;
+  try {
+    localStorage.setItem(
+      "yhimhas:music-backgrounds:v1",
+      JSON.stringify(backgroundChoices.value),
+    );
+  } catch {
+    notice.value = "背景偏好暂时无法保存，本次浏览仍可切换。";
+  }
+}
+function updateDay() {
+  day.value = shanghaiDate();
+}
+let dayTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
-  try { const saved: unknown = JSON.parse(localStorage.getItem('lin-music-favorites') || '[]'); if (Array.isArray(saved)) favorites.value = saved.filter((id): id is string => typeof id === 'string') } catch { notice.value = '收藏记录暂时无法读取。' }
-})
+  try {
+    const saved: unknown = JSON.parse(
+      localStorage.getItem("lin-music-favorites") || "[]",
+    );
+    if (Array.isArray(saved))
+      favorites.value = [
+        ...new Set(saved.filter((id): id is string => typeof id === "string")),
+      ];
+    const choices: unknown = JSON.parse(
+      localStorage.getItem("yhimhas:music-backgrounds:v1") || "{}",
+    );
+    if (choices && typeof choices === "object") {
+      for (const tab of tabs) {
+        const value = (choices as Record<string, unknown>)[tab.id];
+        if (
+          typeof value === "number" &&
+          Number.isInteger(value) &&
+          value >= 0 &&
+          value < backgrounds.length
+        )
+          backgroundChoices.value[tab.id] = value;
+      }
+    }
+  } catch {
+    notice.value = "浏览器偏好暂时无法读取，已使用默认设置。";
+  }
+  dayTimer = setInterval(updateDay, 30_000);
+  document.addEventListener("visibilitychange", updateDay);
+});
+onBeforeUnmount(() => {
+  clearInterval(dayTimer);
+  document.removeEventListener("visibilitychange", updateDay);
+});
 </script>
 
 <template>
-  <section class="rain-music" aria-label="音乐空间">
-    <div class="rain-background" aria-hidden="true" />
-    <header class="rain-header">
-      <RouterLink to="/blog" class="rain-back" aria-label="返回博客"><MusicIcon name="back" /></RouterLink>
-      <nav class="rain-tabs" aria-label="音乐导航"><button v-for="tab in tabs" :key="tab" :class="{ active: activeTab === tab }" :aria-pressed="activeTab === tab" @click="activeTab = tab; query = ''">{{ tab }}</button></nav>
-      <label class="rain-search"><MusicIcon name="search" /><input v-model="query" type="search" placeholder="搜索歌单中的歌曲或视频…" aria-label="搜索音乐" /></label>
-      <RouterLink class="rain-avatar" to="/" aria-label="返回主页"><img src="/yhimhas-logo.jpg" alt="" width="40" height="40" /></RouterLink>
+  <section
+    :class="[
+      'music-room',
+      `music-room--${activeTab}`,
+      { 'music-motion-off': motionOff },
+    ]"
+    :style="{ '--travel': `${direction * 35}px` }"
+    aria-label="音乐空间"
+  >
+    <div class="music-backdrops" aria-hidden="true">
+      <img
+        v-for="(item, index) in backgrounds"
+        :key="item.url"
+        :src="item.url"
+        alt=""
+        :style="{ objectPosition: item.focalPoint }"
+        :class="{ 'is-visible': backgroundIndex === index }"
+      />
+    </div>
+    <div class="music-screenprint" aria-hidden="true">
+      <span>SOUND<br />OF MY<br />DAYS.</span>
+    </div>
+    <header class="music-masthead">
+      <RouterLink to="/blog" class="music-exit" aria-label="返回博客"
+        ><MusicIcon name="back" /><span>返回博客</span></RouterLink
+      >
+      <RouterLink to="/" class="music-wordmark" aria-label="返回首页"
+        >YHIMHAS<span> / MUSIC ROOM</span></RouterLink
+      >
+      <span class="music-edition">PERSONAL SELECTION — VOL. 01</span>
+      <button
+        class="music-motion"
+        :aria-pressed="motionOff"
+        @click="motionOff = !motionOff"
+      >
+        {{ motionOff ? "动态已暂停" : "动态开启" }}
+        <span aria-hidden="true">{{ motionOff ? "○" : "✳" }}</span>
+      </button>
     </header>
-    <h1 class="rain-sr-only">音乐，让雨声有了旋律</h1>
-    <section v-if="panelVisible" class="rain-library rain-glass" aria-label="平台歌单">
-      <div class="rain-library-heading"><div><span>YOUR SOUND COLLECTION</span><h2>{{ query ? '搜索结果' : activeTab }}</h2></div><button class="rain-icon-button" aria-label="返回发现" @click="activeTab = '发现'; query = ''"><MusicIcon name="close" /></button></div>
-      <div class="rain-platforms" aria-label="歌单平台"><button :aria-pressed="platform === 'netease'" @click="switchPlatform('netease')">网易云音乐</button><button :aria-pressed="platform === 'bilibili'" @click="switchPlatform('bilibili')">哔哩哔哩</button></div>
-      <p v-if="currentPlaylist?.syncedAt" class="rain-library-note">{{ currentPlaylist.tracks.length }} 个视频 · 同步于 {{ new Date(currentPlaylist.syncedAt).toLocaleDateString('zh-CN') }}</p>
-      <div v-for="playlist in filteredPlaylists" :key="playlist.id" class="rain-results">
-        <button class="rain-playlist-title" @click="choose(playlist.id)">{{ playlist.title }} <span>↗</span></button>
-        <div v-for="track in playlist.tracks" :key="track.id" :class="['rain-track-row', { 'is-selected': currentTrack?.id === track.id }]"><button class="rain-track-choice" :aria-current="currentTrack?.id === track.id ? 'true' : undefined" @click="choose(playlist.id, track.id)"><MusicIcon name="play" /><span><strong>{{ track.title }}</strong><small>{{ track.artist }}</small></span></button><button class="rain-icon-button" :aria-label="`${favorites.includes(track.id) ? '取消收藏' : '收藏'}${track.title}`" :aria-pressed="favorites.includes(track.id)" @click="favorite(track.id)"><MusicIcon name="heart" /></button></div>
-        <p v-if="!playlist.tracks.length" class="rain-library-note">{{ playlist.embedUrl ? '曲目列表将在平台播放器中展示。' : '暂无可播放曲目。' }}</p>
+
+    <div class="music-stage">
+      <aside class="music-menu">
+        <div class="music-menu-heading"></div>
+        <nav
+          class="music-scene-nav"
+          role="tablist"
+          aria-label="音乐栏目"
+          @keydown="moveTab"
+        >
+          <button
+            v-for="(tab, index) in tabs"
+            :id="`music-tab-${tab.id}`"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            aria-controls="music-panel"
+            :tabindex="activeTab === tab.id ? 0 : -1"
+            :class="{ 'is-active': activeTab === tab.id }"
+            @click="switchTab(tab.id)"
+          >
+            <span class="music-nav-number">0{{ index + 1 }}</span
+            ><span class="music-nav-label"
+              ><b>{{ tab.en }}</b
+              ><span>{{ tab.label }}</span></span
+            ><span class="music-nav-arrow" aria-hidden="true">↗</span>
+          </button>
+        </nav>
+        <p class="music-scene-caption"></p>
+        <button class="music-background-choice" @click="cycleBackground">
+          <span aria-hidden="true">◈</span> 切换背景 <b>{{ background.name }}</b
+          ><span aria-hidden="true">↗</span>
+        </button>
+      </aside>
+
+      <div class="music-content-shell">
+        <Transition name="music-panel" mode="out-in">
+          <section
+            :key="activeTab"
+            id="music-panel"
+            class="music-content"
+            role="tabpanel"
+            :aria-labelledby="`music-tab-${activeTab}`"
+          >
+            <div class="music-panel-meta">
+              <span
+                >{{ panelEnglish }} /
+                {{
+                  showingDaily ? day.replaceAll("-", ".") : "YOUR SOUND ARCHIVE"
+                }}</span
+              ><span
+                >{{
+                  pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
+                }}
+                </span
+              >
+            </div>
+            <header class="music-panel-heading">
+              <div>
+                <h2>{{ panelTitle }}<span aria-hidden="true">↗</span></h2>
+                <!-- <p>
+                  {{
+                    showingDaily
+                      ? "每天三首，从熟悉的收藏里听见新鲜感。"
+                      : activeTab === "favorites"
+                        ? "那些舍不得跳过的声音。"
+                        : "找到你此刻想听的那一首。"
+                  }}
+                </p> -->
+              </div>
+              <span class="music-panel-star" aria-hidden="true"><MusicIcon name="sparkle" /></span>
+            </header>
+            <label class="music-search"
+              ><MusicIcon name="search" /><input
+                v-model="query"
+                type="search"
+                :disabled="pendingPlaylist"
+                :placeholder="
+                  pendingPlaylist ? '歌单已添加，曲目列表待同步' : activeTab === 'favorites'
+                    ? '搜索我的收藏…'
+                    : '搜索歌名、作者…'
+                "
+                aria-label="搜索音乐"
+              /><span aria-hidden="true">SEARCH</span></label
+            >
+            <div
+              v-if="activeTab !== 'discover'"
+              class="music-platform-filter"
+              aria-label="筛选来源"
+            >
+              <div class="music-platform-switch" :style="{ '--platform-index': platformIndex }">
+              <span class="music-platform-indicator" aria-hidden="true" />
+              <button
+                v-for="item in platforms"
+                :key="item.id"
+                :aria-pressed="platform === item.id"
+                @click="platform = item.id"
+              >
+                {{ item.name }}
+              </button>
+              </div>
+              <span>{{
+                activeTab === "favorites"
+                  ? `${favoriteCount} 首收藏`
+                  : `${uniqueTracks.length} 首收录`
+              }}</span>
+            </div>
+            <div
+              ref="trackList"
+              :class="['music-track-list', { 'is-daily': showingDaily }]"
+              aria-live="polite"
+            >
+              <Transition name="music-source" mode="out-in" @before-enter="resetTrackScroll">
+              <div :key="platform" class="music-source-results">
+              <article
+                v-for="(track, index) in visibleTracks"
+                :key="track.id"
+                :class="[
+                  'music-track',
+                  { 'is-selected': selectedId === track.id },
+                ]"
+              >
+                <button
+                  class="music-track-pick"
+                  :aria-label="`打开播放器：${track.title}`"
+                  :aria-current="selectedId === track.id ? 'true' : undefined"
+                  @click="choose(track.id)"
+                >
+                  <span class="music-track-number">{{
+                    String(index + 1).padStart(2, "0")
+                  }}</span
+                  ><span class="music-track-copy"
+                    ><span v-if="showingDaily" class="music-daily-tag">{{
+                      ["TODAY’S OPENING", "A LITTLE DETOUR", "ONE MORE REPEAT"][
+                        index
+                      ]
+                    }}</span
+                    ><strong>{{ track.title }}</strong
+                    ><small
+                      >{{ track.artist }} <span>/</span>
+                      {{
+                        track.platform === "bilibili"
+                          ? "Bilibili"
+                          : "网易云音乐"
+                      }}</small
+                    ></span
+                  ><MusicIcon name="play" />
+                </button>
+                <button
+                  class="music-favorite"
+                  :aria-label="`${favorites.includes(track.id) ? '取消收藏' : '收藏'}：${track.title}`"
+                  :aria-pressed="favorites.includes(track.id)"
+                  @click="favorite(track.id)"
+                >
+                  <MusicIcon name="heart" />
+                </button>
+              </article>
+              <div v-if="!visibleTracks.length" class="music-empty">
+                <span aria-hidden="true">{{
+                  activeTab === "favorites" ? "♡" : "↗"
+                }}</span>
+                <h3>
+                  {{
+                    pendingPlaylist ? neteasePlaylist?.title : searching
+                      ? "暂时没有找到这段旋律"
+                      : platform === "netease" && activeTab === 'favorites'
+                        ? "还没有收藏的网易云曲目"
+                        : activeTab === "favorites"
+                          ? "下一次心动，留在这里"
+                          : "歌单正在等待第一首歌"
+                  }}
+                </h3>
+                <p>
+                  {{
+                    pendingPlaylist ? '歌单已添加，曲目列表待同步。可尝试官方播放器，或前往网易云查看。' : searching
+                      ? "换一个歌名或作者试试。"
+                      : activeTab === "favorites"
+                        ? "点击曲目旁的爱心，就能在这里再次遇见。"
+                        : "试试其他来源，或稍后再来。"
+                  }}
+                </p>
+                <div v-if="pendingPlaylist && neteasePlaylist" class="music-playlist-actions">
+                  <button @click="openPlaylist(neteasePlaylist.id)"><MusicIcon name="play" />打开歌单播放器</button>
+                  <a :href="neteasePlaylist.url" target="_blank" rel="noopener noreferrer">在网易云查看歌单 ↗</a>
+                </div>
+                <button
+                  v-if="
+                    activeTab === 'favorites' &&
+                    !searching &&
+                    platform === 'all'
+                  "
+                  @click="switchTab('discover')"
+                >
+                  去发现音乐 ↗</button
+                ><button v-if="searching" @click="query = ''">
+                  清空搜索 ↗
+                </button>
+              </div>
+              </div>
+              </Transition>
+            </div>
+            <footer class="music-panel-footer">
+              <span>{{
+                showingDaily
+                  ? "按上海日期更新 · 选自已收录歌单"
+                  : "所有喜欢，都值得被记住。"
+              }}</span
+              ><span aria-hidden="true">LISTEN / REPEAT</span>
+            </footer>
+          </section>
+        </Transition>
       </div>
-      <div v-if="!filteredPlaylists.length" class="rain-empty"><MusicIcon name="note" /><p>{{ !currentPlaylist ? `${platformName}歌单尚未配置` : activeTab === '我的收藏' ? '还没有收藏的曲目。' : '没有找到匹配的曲目。' }}</p><p v-if="!currentPlaylist">{{ platform === 'netease' ? '等待添加网易云歌单链接。' : '等待添加 Bilibili 收藏夹或合集链接。' }}</p></div>
+    </div>
+
+    <!-- Persistent across music tabs/backgrounds: switching scenes does not remount the iframe. -->
+    <section class="music-player" aria-label="音乐播放器">
+      <div class="music-player-strip">
+        <span class="music-player-mark" aria-hidden="true"
+          >{{ playerOpen ? "PLAYER" : "STAND BY" }}<i>♫</i></span
+        >
+        <div class="music-player-title">
+          <span>{{ playerOpen ? "平台播放器已打开" : "待播放" }}</span>
+          <h2>{{ currentTrack?.title || currentPlaylist?.title || "选择一首，开始今天的旋律" }}</h2>
+          <a
+            v-if="currentTrack || currentPlaylist"
+            :href="currentTrack?.url || currentPlaylist?.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            >{{ currentTrack?.artist || currentPlaylist?.title }} ·
+            {{
+              currentPlaylist?.platform === "bilibili" ? "Bilibili" : "网易云音乐"
+            }}
+            ↗</a
+          >
+        </div>
+        <div class="music-player-controls">
+          <button
+            :disabled="!currentTrack"
+            class="music-favorite"
+            :aria-label="
+              currentTrack && favorites.includes(currentTrack.id)
+                ? '取消收藏当前曲目'
+                : '收藏当前曲目'
+            "
+            :aria-pressed="
+              !!currentTrack && favorites.includes(currentTrack.id)
+            "
+            @click="currentTrack && favorite(currentTrack.id)"
+          >
+            <MusicIcon name="heart" />
+          </button>
+          <button
+            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            aria-label="上一首"
+            @click="stepTrack(-1)"
+          >
+            <MusicIcon name="previous" />
+          </button>
+          <button
+            class="music-player-open"
+            :disabled="!embedUrl"
+            :aria-expanded="playerOpen"
+            @click="togglePlayer"
+          >
+            <MusicIcon :name="playerOpen ? 'close' : 'play'" /><span>{{
+              playerOpen ? "关闭播放器" : "打开播放器"
+            }}</span>
+          </button>
+          <button
+            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            aria-label="下一首"
+            @click="stepTrack(1)"
+          >
+            <MusicIcon name="next" />
+          </button>
+        </div>
+      </div>
+      <div v-if="playerOpen && embedUrl" class="music-embed">
+        <iframe
+          :key="embedUrl"
+          :src="embedUrl"
+          :title="`平台播放器：${currentTrack?.title || currentPlaylist?.title}`"
+          :class="{ 'is-playlist': !!selectedPlaylistId }"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowfullscreen
+        />
+        <p>
+          播放、暂停和进度由平台播放器控制。<a
+            :href="currentTrack?.url || currentPlaylist?.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            >无法播放？前往原页面 ↗</a
+          >
+        </p>
+      </div>
     </section>
-    <section class="rain-player rain-glass rain-platform-player" aria-label="平台音乐播放器">
-      <div class="rain-platforms" aria-label="播放平台"><button :aria-pressed="platform === 'netease'" @click="switchPlatform('netease')">网易云音乐</button><button :aria-pressed="platform === 'bilibili'" @click="switchPlatform('bilibili')">哔哩哔哩</button></div>
-      <div class="rain-player-top"><img class="rain-cover" src="/music-rain-background.jpg" alt="雨夜音乐空间" width="92" height="92" /><div class="rain-track-info"><h2>{{ currentTrack?.title || currentPlaylist?.title || '等待你的歌单' }}</h2><p>{{ currentTrack?.artist || platformName }}</p><p class="rain-source-status">{{ currentPlaylist ? `${currentPlaylist.title} · ${currentPlaylist.tracks.length} 个视频` : '尚未配置歌单来源' }}</p></div><button v-if="currentTrack" class="rain-icon-button" :aria-label="favorites.includes(currentTrack.id) ? '取消收藏当前曲目' : '收藏当前曲目'" :aria-pressed="favorites.includes(currentTrack.id)" @click="favorite(currentTrack.id)"><MusicIcon name="heart" /></button></div>
-      <div v-if="currentPlaylist && currentPlaylist.tracks.length > 1" class="rain-track-navigation"><button class="rain-icon-button" aria-label="上一首" @click="stepTrack(-1)"><MusicIcon name="previous" /></button><span>{{ currentPlaylist.tracks.findIndex(track => track.id === currentTrack?.id) + 1 }} / {{ currentPlaylist.tracks.length }}</span><button class="rain-icon-button" aria-label="下一首" @click="stepTrack(1)"><MusicIcon name="next" /></button></div>
-      <div v-if="playerOpen && embedUrl" class="rain-embed"><iframe :key="embedUrl" :src="embedUrl" :title="`${platformName}：${currentTrack?.title || currentPlaylist?.title}`" :class="{ 'is-video': platform === 'bilibili' }" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen /><button class="rain-source-button" @click="playerOpen = false">关闭播放器</button><p class="rain-library-note">播放、进度和音量由平台播放器控制。</p></div>
-      <div v-else class="rain-source-actions"><button v-if="embedUrl" class="rain-source-button" @click="playerOpen = true"><MusicIcon name="play" />打开站内播放器</button><button class="rain-source-button" @click="activeTab = '音乐库'; query = ''"><MusicIcon name="note" />查看{{ platformName }}歌单</button></div>
-      <p v-if="!currentPlaylist" class="rain-player-note">{{ platform === 'netease' ? '连接你的歌单，让喜欢的旋律在这里相遇。' : '收藏夹与视频合集，让每一段声音都有画面。' }}</p>
-      <a v-if="currentPlaylist" class="rain-official-link" :href="currentTrack?.url || currentPlaylist.url" target="_blank" rel="noopener noreferrer">若站内播放不可用，在{{ platformName }}打开 ↗</a>
-      <p v-if="notice" class="rain-player-note" role="status">{{ notice }}</p>
-    </section>
-    <div class="rain-signature" aria-hidden="true">YHIMHAS <span>/</span> A MOMENT TO LISTEN</div>
+    <p v-if="notice" class="music-notice" role="status">{{ notice }}</p>
+    <footer class="music-colophon">
+      <span>YHIMHAS / A MOMENT TO LISTEN</span><span>{{ day }} · SHANGHAI</span
+      ><span>MAKE EVERY DAY A GOOD TRACK. ↗</span>
+    </footer>
   </section>
 </template>
