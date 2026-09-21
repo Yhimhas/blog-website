@@ -2,10 +2,10 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { TechButton, TechTabs, MotionReveal } from '@field-lab/vue'
-import { posts } from '../content'
+import { posts, categories } from '../content'
 const route = useRoute()
 const router = useRouter()
-const tabs = [{ id: 'all', label: '全部文章' }, ...['开发笔记', '生活随记', '音乐手记'].map(id => ({ id, label: id }))]
+const tabs = [{ id: 'all', label: '全部文章' }, ...categories.map(id => ({ id, label: id }))]
 const category = computed({
   get: () => typeof route.query.category === 'string' && tabs.some(tab => tab.id === route.query.category) ? route.query.category : 'all',
   set: value => { void router.replace({ query: { ...route.query, category: value === 'all' ? undefined : value } }) },
@@ -16,7 +16,7 @@ const query = computed({
 })
 const visiblePosts = computed(() => posts.filter(post =>
   (category.value === 'all' || post.category === category.value) &&
-  [post.title, post.summary, ...post.tags].join(' ').toLowerCase().includes(query.value.trim().toLowerCase())
+  post.searchText.includes(query.value.trim().toLowerCase())
 ))
 function resetFilters() { void router.replace({ query: {} }) }
 </script>
@@ -29,7 +29,7 @@ function resetFilters() { void router.replace({ query: {} }) }
               <h1 class="section-title">文字，留下思考的痕迹<span>↗</span></h1>
             </div>
             <span class="section-note"
-              >开发笔记与生活切片<br />共 {{ posts.length }} 篇示例文章</span
+              >开发笔记与生活切片<br />共 {{ posts.length }} 篇文章</span
             >
           </div></MotionReveal
         >

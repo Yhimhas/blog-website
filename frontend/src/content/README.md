@@ -1,0 +1,45 @@
+# 本地文章内容库
+
+文章放在 `posts/*.md`，新增或修改文件后，Vite 会自动读取；无需修改 TypeScript 数组或分类配置。上线前需要重新构建和部署。所有放入该目录的文章都会公开，没有草稿或定时发布机制（未来日期也会显示）。
+
+## 新增真实文章
+
+新建 `posts/my-first-post.md`，按以下格式填写：
+
+```markdown
+---
+title: "我的第一篇文章"
+slug: my-first-post
+published: "2026-09-21"
+category: 开发笔记
+summary: "用一两句话描述文章主题，用于列表简介和详情页导语。"
+tags: [Vue 3, TypeScript]
+---
+
+## 从问题开始
+
+这里写正文，可以使用 **粗体**、列表、引用、链接与代码块。
+```
+
+- `title`：必填标题，页面会显示为 h1，正文建议从 `##` 开始。
+- `slug`：必填且全库唯一，只能使用小写英文字母、数字和单个连字符；详情地址为 `/blog/my-first-post`。文件名建议与 slug 一致，但实际路由由 slug 决定。发布后保持 slug 不变，否则旧链接失效；改标题或文件名不会改变地址。
+- `published`：必填有效公历日期，使用带引号的 `YYYY-MM-DD`，表示发布日期。列表按日期从新到旧排序，同日按 slug 排序；页面显示为 `YYYY.MM.DD`，不做时区转换。
+- `category`：必填单个分类，分类标签自动从内容生成。请统一同类文章的写法。`all` 是列表“全部文章”的保留值，不可用作分类。
+- `summary`：必填纯文本摘要，不从正文自动截取，也不解析 Markdown。详情页会作为导语显示，正文无需重复。
+- `tags`：至少一个非空字符串的 YAML 数组，用于展示与搜索。
+
+搜索覆盖标题、摘要、分类、标签和正文，不区分英文大小写。列表的 `q`、`category` 查询参数、`/blog/:id` 地址和无效地址的 404 阅读提示保持原有行为。原四篇文章的 slug 保持为 `building`、`components`、`slow-days`、`listening`。
+
+支持标准 Markdown 标题、段落、列表、引用、代码块、表格、图片和链接。原始 HTML 会显示为文本，危险链接协议不会生成可点击链接。代码块采用 FIELD 配色，不做语法高亮。图片可放入 `frontend/public/images/`，在正文使用 `![说明](/images/example.png)`；部署到子路径时请使用相应的完整资源路径。正文链接按普通链接处理，站内文章链接请写 `/blog/目标-slug`。
+
+## 检查与发布
+
+使用项目要求的 Node.js（22.18+ 或 24.12+）：
+
+```sh
+pnpm check:content
+pnpm test:content
+pnpm build
+```
+
+构建会先校验内容，有缺失字段、非法日期、重复 slug 或空正文时直接失败，并给出文件名。开发时也使用同一套校验。`content.ts` 保留为页面共享入口，音乐内容仍在原处；`content/library.ts` 负责解析与校验，`content/posts.ts` 负责自动收集 Markdown 文件。

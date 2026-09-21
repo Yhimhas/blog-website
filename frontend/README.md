@@ -1,5 +1,9 @@
 # vue-project
 
+## 文章维护
+
+博客读取 `src/content/posts/*.md`。新增文章、发布日期、摘要、标签和 slug 的填写方式见 [本地文章内容库说明](src/content/README.md)。提交前运行 `pnpm check:content` 和 `pnpm test:content`；`pnpm build` 也会校验内容。
+
 This template should help get you started developing with Vue 3 in Vite.
 
 ## Recommended IDE Setup

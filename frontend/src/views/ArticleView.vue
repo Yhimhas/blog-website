@@ -11,13 +11,13 @@ const post = computed(() => posts.find(item => item.id === props.id))
   <article v-if="post" class="article-page">
     <nav class="article-breadcrumb" aria-label="面包屑"><RouterLink to="/blog">博客</RouterLink><span aria-hidden="true"> / </span><span>{{ post.category }}</span></nav>
     <header class="article-header">
-      <div class="eyebrow">JOURNAL / {{ post.date }} / 示例文章</div>
+      <div class="eyebrow">JOURNAL / <time :datetime="post.published">{{ post.date }}</time></div>
       <h1>{{ post.title }}</h1>
       <div class="tags"><span v-for="tag in post.tags" :key="tag"># {{ tag }}</span></div>
     </header>
     <div class="reading-body">
       <p class="reading-intro">{{ post.summary }}</p>
-      <section v-for="part in post.body" :key="part.title"><h2>{{ part.title }}</h2><p>{{ part.text }}</p></section>
+      <div class="markdown-body" v-html="post.html" />
     </div>
     <div class="article-end"><span>— END OF NOTE —</span><RouterLink to="/blog" class="primary-link">← 返回文章列表</RouterLink></div>
   </article>

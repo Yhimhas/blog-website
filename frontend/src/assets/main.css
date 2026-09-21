@@ -229,6 +229,20 @@ a.post-open { display: grid; place-items: center; }
 .article-header h1 { font-size: clamp(28px, 3.1vw, 44px); overflow-wrap: anywhere; margin: 18px 0; }
 .article-page .reading-body { max-width: none; padding: 18px 0; font-size: 16px; line-height: 2.1; }
 .article-page .reading-body h2 { font-size: 23px; margin: 36px 0 12px; }
+.markdown-body { overflow-wrap: anywhere; }
+.markdown-body h3, .markdown-body h4 { margin: 28px 0 10px; line-height: 1.5; }
+.markdown-body p { margin: 0 0 18px; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.6em; margin: 18px 0; }
+.markdown-body blockquote { margin: 24px 0; padding: 12px 20px; border-left: 3px solid #8b967b; background: #e8ebdf; }
+.markdown-body blockquote p:last-child { margin-bottom: 0; }
+.markdown-body a { text-decoration: underline; text-underline-offset: 4px; color: #657524; }
+.markdown-body pre { max-width: 100%; overflow-x: auto; padding: 20px; background: #242820; color: #e8ebdf; line-height: 1.7; }
+.markdown-body code { font-family: var(--f-detail), monospace; font-size: .88em; }
+.markdown-body :not(pre) > code { padding: 2px 5px; background: #e8ebdf; }
+.markdown-body img { max-width: 100%; height: auto; }
+.markdown-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 24px 0; }
+.markdown-body th, .markdown-body td { border: 1px solid #cfd3c6; padding: 8px 14px; text-align: left; }
+.markdown-body hr { border: 0; border-top: 1px solid #cfd3c6; margin: 30px 0; }
 .article-end { border-top: 1px solid #cfd3c6; margin-top: 32px; padding-top: 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .article-end > span { font: 10px var(--f-detail); color: #7a836b; }
 .article-end .primary-link { font-size: 12px; }

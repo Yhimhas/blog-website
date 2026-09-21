@@ -7,18 +7,23 @@
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
-    "build-only": "vite build",
+    "build-only": "npm run check:content && vite build",
+    "check:content": "node --experimental-strip-types scripts/check-content.mjs",
+    "test:content": "node --experimental-strip-types --test scripts/content.test.mjs",
     "type-check": "vue-tsc --build",
     "sync:music": "node scripts/sync-bilibili.mjs"
   },
   "dependencies": {
     "@field-lab/vue": "file:vendor\\field-lab-vue-0.1.2.tgz",
+    "markdown-it": "^15.0.2",
     "pinia": "^4.0.2",
     "vue": "^3.5.40",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.4",
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
