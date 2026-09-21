@@ -152,7 +152,17 @@ provider 为 bilibili/netease；durationSeconds、partId、embedUrl 无可靠值
 
 前端检查：`pnpm run type-check`，`pnpm run build-only -- --emptyOutDir=false`，以及桌面/手机导航、返回、深链接、键盘焦点。构建保留旧产物，不自动清理。新增测试资源和无用残留在每次交付时列出。
 
-## 9. 文档导航
+## 9. 音乐页现状补充（2026-09-21）
+
+仅 `/music` 采用用户视频参考的斜切菜单、高对比黑白与蓝/粉配色。发现、音乐库、收藏使用独立背景；用户可在三个预设中切换，各栏目偏好保存在 `yhimhas:music-backgrounds:v1`。收藏沿用 `lin-music-favorites`，没有新增后端写接口。
+
+“发现”的每日推荐目前由 `frontend/src/musicDaily.ts` 从已收录真实曲目生成：曲目 ID 去重，对 `Asia/Shanghai` 日期与 ID 做稳定 hash 排序，取前 3 条；同日期、同曲库结果相同，源列表重排不影响结果。曲库不足则按实际数量返回；曲库内容变更可能改变当天结果。这是可运行的前端过渡方案，没有调用尚未实现的 Go API，也没有实现后端的近 7 天排除规则。页面每 30 秒及恢复可见时检查日期，播放器已选曲目不会随日期更新而被替换。
+
+你完成 `GET /api/v1/music/recommendations/today` 后，由助手将本地 dailySelection 替换为接口数据；生产环境以后端保存的结果与业务日期为准，不用客户端当前时间重新抽取。建议响应为 `data: { date, timezone: "Asia/Shanghai", status: "ready", items: [...] }`，items 使用第 6 节曲目 DTO，并携带 playlistId。后端默认数量 3，按日期事务保存；前端需要 loading/error/empty 三种状态，失败不能悄悄切回本地推荐。
+
+播放仍使用真实官方 iframe 和原平台链接，页面不模拟播放进度；打开播放器不等于平台已经成功播放。iframe 放在音乐栏目过渡之外，切换栏目或背景保留当前实例，离开 `/music` 则卸载。纯音频仍按独立设计文档后续实现。
+
+## 10. 文档导航
 
 - [原始开发方案](personal-website-development-plan.md)：总体业务与部署背景。
 - [旧每日学习计划](daily-development-learning-plan.md)：保留概念参考，分工与前端技术栈以本文为准。
