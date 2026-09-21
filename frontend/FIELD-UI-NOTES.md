@@ -107,3 +107,44 @@
 - 构建环境提示 Node v20.19.5 低于 package.json 声明的 ^22.18.0 || >=24.12.0；本次构建成功，未替用户升级环境。
 - 当前构建资源：dist/assets/index-B82AM5Le.css、dist/assets/index-Dju8uhgG.js。
 - 本轮中间构建残留：dist/assets/index-qsMTnISV.js（已被最终 JS 替代，保留未删）。没有新增截图、测试脚本或音频文件；原有旧 dist 资源未清理。类型检查缓存为正常构建产物。
+
+## 2026-09-21 音乐页视频参考风格与每日推荐
+
+- 改造范围仅 MusicView.vue 及新 music-atlus.css；首页、博客和全局路由动效未修改。视频 3:43 蓝色菜单与 6:00 附近粉色菜单为视觉参考，采用斜切导航、黑白色块、超大装饰字、蓝/青与粉色强调及方向相关的分层过渡。
+- 默认进入发现：每日推荐 3 首；音乐库有现有 53 条真实 Bilibili 元数据，支持标题/作者搜索及来源过滤；收藏延续 lin-music-favorites。暂无网易云数据时显示明确空态。
+- 背景默认：发现=已有 intro-p3re.jpg，音乐库=已有 music-rain-background.jpg，收藏=新增原创 SVG music-favorites-background.svg。三个栏目可各自在三个预设背景间切换，偏好保存在 yhimhas:music-backgrounds:v1；没有上传新图片或新增外部素材依赖。
+- musicDaily.ts 按上海日期和曲目 ID 稳定 hash 排序、去重并取 3 条；不修改源数据，源列表重排不改变结果。30 秒间隔与页面恢复可见时检查日期。曲库变动可能改变当天结果；未实现后端近 7 天排除与持久化推荐，详见 backend-development-guide.md 的音乐页补充。
+- 播放器没有封面，保留标题、作者、出处、上一首/下一首、收藏及官方 iframe 入口；切换栏目与背景不重建 iframe。明确显示“待播放/平台播放器已打开”，不模拟播放成功或进度。打开后锁定当前曲目，跨日推荐更新不替换正在打开的曲目。
+- 动效：背景交叉淡入+轻微缩放，内容先退出150ms再入场400ms，列表小范围错峰入场；键盘方向键/Home/End 切换 Tab。局部暂停和系统 reduced-motion 均有降级规则。
+- 验证：music-daily.test.mjs 3 项测试通过（上海跨日、同日稳定/去重/不修改输入、空与小曲库）；最终类型检查、4 篇内容检查、Vite build、git diff --check 通过。运行新测试：node --experimental-strip-types --test scripts/music-daily.test.mjs（使用支持该参数的 Node）。
+- 浏览器：1440px 桌面、390px/320px 无横向溢出；3 首推荐刷新稳定；收藏保存和取消；栏目背景与手动背景偏好刷新保留；音乐库53条、网易云空态、搜索空态；方向键/Home 连续切换收敛，焦点保留选中 Tab；暂停动态可导航；打开播放器后切换栏目，iframe 数量仍为1且src不变；返回博客显示原有文章页；浏览器 error/warn 记录为空。测试添加的收藏已取消，测试背景已恢复默认。
+- 未实测真实触屏、Safari/Firefox、系统 reduced-motion 开关或平台音频实际出声；iframe 本轮只验证入口/保留/关闭，不声称纯音频已实现。
+- 构建的 pnpm 启动器仍报告 Node v20.19.5 引擎警告；已将子进程 PATH 指向 bundled Node，内容检查与构建实际通过。未修改用户全局 Node 配置。
+- 当前构建资源：dist/assets/index-KiZR27wB.css、dist/assets/index-czEVEAIt.js。
+- 本轮中间构建残留：dist/assets/index-B4zj7kXq.css、dist/assets/index-DCBVaZj7.js（被最终构建替代，保留未删）。旧 music.css 不再由音乐页导入，保留作风格参考；未删除任何文件。没有保存新增截图、音频、视频或临时测试脚本；music-daily.test.mjs 为保留的正式回归测试。
+
+## 2026-09-21 替换为用户提供的三张背景
+
+- 原样复制 Downloads/1789983476206.jpeg、1789983478768.jpeg、1789983473823.jpeg 到 public/music-golden-rain.jpeg、music-blue-rain.jpeg、music-pink-rain.jpeg，未修改或删除原图。
+- 默认映射：发现→金色雨幕，音乐库→蓝调雨夜，收藏→绯色心动。手动切换和已有栏目偏好继续有效。
+- 每张图片使用独立 object-position 保持人物裁切位置，遮罩改为中性深色以保留原图暖色与粉色。
+- 验证：vue-tsc --build、git diff --check 通过；浏览器三张图片自然宽度分别为3305/3845/3259，均加载成功，栏目切换后的图片路径正确。
+- 未生成试验产物，未运行额外打包。旧 music-favorites-background.svg 已不再引用，按要求保留；intro-p3re.jpg 仍用于首页，music-rain-background.jpg 仍为历史样式参考素材。
+
+## 2026-09-21 IgnoredOne 图标与平台切换
+
+- 按用户指定 https://www.ignoredone.space/index.php/iconasset-2/，选用 iconpack02 的播放0031、上一首0026、下一首0030和装饰星形0007；原始4个PNG保存在public/icons/ignoredone，合计7380字节。MusicIcon用CSS alpha mask继承当前颜色；搜索、收藏、关闭和返回保留原图标，不将通用图标作为平台Logo。来源与用途见同目录README.md；未声明第三方素材为MIT或项目原创。
+- 平台筛选加入三等分滑动选中条（320ms），内容out-in退出120ms/进入240ms，淡入淡出配合小幅纵向移动。浏览区域保持桌面350px、手机360px，解决Bilibili列表变为空网易云时面板骤然收缩。新平台入场重置列表滚动，搜索输入不触发整组重播，播放器不在该过渡内。
+- 延续motionOff、父级暂停及prefers-reduced-motion降级；不加入定时器切换或外部动效依赖。
+- 验证：vue-tsc --build、4篇文章检查、Vite build --emptyOutDir=false、git diff --check通过。浏览器观察到music-source-enter-active，切换前后列表高度350px一致；Bilibili→网易云→Bilibili连续操作最终53条且选中Bilibili；暂停状态可切换；390px内容宽375px无横向溢出；图标正常显示，浏览器error/warn为空。系统reduced-motion开关和真实触屏未实测。
+- 本轮构建资源：dist/assets/index-CRaMHAsF.css、dist/assets/index-BvcFwliV.js。未删除旧文件、未保存临时截图、未下载未使用图标。临时启动的5174预览已停止，沿用现有5173预览。
+
+## 2026-09-21 完成中断任务
+
+- 网易云歌单已按用户确认登记为「我喜欢的音乐」，入口更新为用户提供的移动歌单 URL；由于公开接口返回未授权，保持 `syncStatus: pending`，页面显示待同步说明、官方歌单播放器入口和原页面链接，不伪造曲目数据。
+- 新增 `SiteIcon.vue`，将 IgnoredOne 图标库的声波、层叠和方向箭头用于全站导航、音乐导航、首页入口、文章/404 返回和回到顶部；原有音乐控制图标继续使用 `MusicIcon.vue`。素材来源和用途记录在 `frontend/public/icons/ignoredone/README.md`。
+- MusicView 的待同步歌单播放器标题、来源链接和 embed URL 已支持仅有 playlist 而没有 track 的情况。
+- 验证：`pnpm run build -- --emptyOutDir=false` 通过（vue-tsc、文章检查、Vite）；`music-daily.test.mjs` 3 项通过；`git diff --check` 通过；浏览器初始页面确认音乐页每日推荐 3 首及播放器入口；后续点击遇到浏览工具 shadow root 错误，未完成本轮歌单点击、图标视觉和窄屏验证。
+- pnpm 启动器仍报告 Node 20.19.5 版本警告，构建子进程使用 bundled Node；本轮构建成功，未修改全局 Node。
+- 本轮构建产物 `dist/assets/index-ZN8enZ7-.css`、`dist/assets/index-DdMXUjtT.js` 保留；旧构建资源均未删除。`icon-review.png` 是本轮图标核对拼图，仅用于检查，按要求保留。没有删除任何文件。
+`n- 本轮被最终构建替代、保留未删的中间产物：dist/assets/index-POt5G4lD.css、dist/assets/index-CAPABa8h.js。
