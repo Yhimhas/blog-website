@@ -2,6 +2,8 @@
 
 更新：2026-09-21。状态：待你实现的开发契约，不代表 API 已存在。
 
+2026-09-22 实施进度：已建立 `backend/` 标准库最小工程，实现 health、内存文章列表和 slug 详情，支持本节约定的分页、筛选与公开隔离。运行方法及测试命令见 [backend/README.md](../backend/README.md)。数据库、认证、ready、其他 API 及前端联调仍待实现；下文原始基线和学习顺序保留为规划参考。
+
 ## 1. 当前基线与分工
 
 实际仓库为 `D:/blog-website/blog-website`。前端位于 `frontend/`，使用 Vue 3、TypeScript、Vite、Vue Router 和 FIELD UI；没有执行早期方案中的 Nuxt 迁移。已有 `/`、`/blog`、`/blog/:id`、`/music` 及 404 页面。博客读取 `src/content.ts`，音乐读取本地歌单 JSON，收藏保存在浏览器；音乐仍是官方 iframe，纯音频尚未实现。当前没有 backend 工程、数据库或管理页面。
