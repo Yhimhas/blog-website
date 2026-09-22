@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
-import { officialEmbed, platformPlaylists } from "../musicSources";
+import { platformPlaylists } from "../musicSources";
 import { dailySelection, shanghaiDate } from "../musicDaily";
 import "../assets/music-atlus.css";
 
@@ -57,7 +57,6 @@ function resetTrackScroll() {
 const selectedId = ref("");
 const favorites = ref<string[]>([]);
 const notice = ref("");
-const playerOpen = ref(false);
 const selectedPlaylistId = ref('');
 const neteasePlaylist = platformPlaylists.find(item => item.id === 'netease:595975585');
 const pendingPlaylist = computed(() => activeTab.value === 'library' && platform.value === 'netease' && neteasePlaylist?.syncStatus === 'pending');
@@ -82,11 +81,11 @@ const currentTrack = computed(
 const currentPlaylist = computed(() =>
   platformPlaylists.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
 );
-const embedUrl = computed(() => officialEmbed(currentTrack.value?.embedUrl || currentPlaylist.value?.embedUrl));
+const officialUrl = computed(() => currentTrack.value?.url || currentPlaylist.value?.url);
+const platformName = computed(() => currentPlaylist.value?.platform === 'bilibili' ? 'Bilibili' : '网易云音乐');
 function openPlaylist(id: string) {
   selectedPlaylistId.value = id;
   selectedId.value = '';
-  playerOpen.value = true;
 }
 const favoriteCount = computed(
   () =>
@@ -164,13 +163,6 @@ function moveTab(event: KeyboardEvent) {
 function choose(id: string) {
   selectedPlaylistId.value = '';
   selectedId.value = id;
-  playerOpen.value = true;
-}
-function togglePlayer() {
-  // Pin the selected track before opening; the daily list can change at midnight.
-  if (!playerOpen.value && currentTrack.value)
-    selectedId.value = currentTrack.value.id;
-  playerOpen.value = !playerOpen.value;
 }
 function stepTrack(direction: number) {
   const queue = currentPlaylist.value?.tracks || [];
@@ -409,7 +401,7 @@ onBeforeUnmount(() => {
               >
                 <button
                   class="music-track-pick"
-                  :aria-label="`打开播放器：${track.title}`"
+                  :aria-label="`选择曲目：${track.title}`"
                   :aria-current="selectedId === track.id ? 'true' : undefined"
                   @click="choose(track.id)"
                 >
@@ -431,7 +423,7 @@ onBeforeUnmount(() => {
                           : "网易云音乐"
                       }}</small
                     ></span
-                  ><MusicIcon name="play" />
+                  ><span aria-hidden="true">↗</span>
                 </button>
                 <button
                   class="music-favorite"
@@ -459,7 +451,7 @@ onBeforeUnmount(() => {
                 </h3>
                 <p>
                   {{
-                    pendingPlaylist ? '歌单已添加，曲目列表待同步。可尝试官方播放器，或前往网易云查看。' : searching
+                    pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
                       ? "换一个歌名或作者试试。"
                       : activeTab === "favorites"
                         ? "点击曲目旁的爱心，就能在这里再次遇见。"
@@ -467,7 +459,7 @@ onBeforeUnmount(() => {
                   }}
                 </p>
                 <div v-if="pendingPlaylist && neteasePlaylist" class="music-playlist-actions">
-                  <button @click="openPlaylist(neteasePlaylist.id)"><MusicIcon name="play" />打开歌单播放器</button>
+                  <button @click="openPlaylist(neteasePlaylist.id)">选择此歌单</button>
                   <a :href="neteasePlaylist.url" target="_blank" rel="noopener noreferrer">在网易云查看歌单 ↗</a>
                 </div>
                 <button
@@ -499,26 +491,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Persistent across music tabs/backgrounds: switching scenes does not remount the iframe. -->
-    <section class="music-player" aria-label="音乐播放器">
+    <section class="music-player" aria-label="曲目信息与控制" aria-describedby="music-playback-status">
       <div class="music-player-strip">
-        <span class="music-player-mark" aria-hidden="true"
-          >{{ playerOpen ? "PLAYER" : "STAND BY" }}<i>♫</i></span
-        >
-        <div class="music-player-title">
-          <span>{{ playerOpen ? "平台播放器已打开" : "待播放" }}</span>
+        <div class="music-player-title" aria-live="polite">
+          <span>{{ currentTrack ? "当前曲目" : currentPlaylist ? "当前歌单" : "尚未选择曲目" }}</span>
           <h2>{{ currentTrack?.title || currentPlaylist?.title || "选择一首，开始今天的旋律" }}</h2>
-          <a
-            v-if="currentTrack || currentPlaylist"
-            :href="currentTrack?.url || currentPlaylist?.url"
+          <div v-if="officialUrl" class="music-player-attribution">
+            <span v-if="currentTrack">{{ currentTrack.artist }} · </span>
+            <span>{{ platformName }} · </span>
+            <a
+            :href="officialUrl"
             target="_blank"
             rel="noopener noreferrer"
-            >{{ currentTrack?.artist || currentPlaylist?.title }} ·
-            {{
-              currentPlaylist?.platform === "bilibili" ? "Bilibili" : "网易云音乐"
-            }}
-            ↗</a
+            >{{ currentTrack ? (currentPlaylist?.platform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗</a
           >
+          </div>
         </div>
         <div class="music-player-controls">
           <button
@@ -543,16 +530,15 @@ onBeforeUnmount(() => {
           >
             <MusicIcon name="previous" />
           </button>
-          <button
+          <a
+            v-if="officialUrl"
             class="music-player-open"
-            :disabled="!embedUrl"
-            :aria-expanded="playerOpen"
-            @click="togglePlayer"
+            :href="officialUrl"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <MusicIcon :name="playerOpen ? 'close' : 'play'" /><span>{{
-              playerOpen ? "关闭播放器" : "打开播放器"
-            }}</span>
-          </button>
+            <span>在{{ platformName }}打开 ↗</span>
+          </a>
           <button
             :disabled="(currentPlaylist?.tracks.length || 0) < 2"
             aria-label="下一首"
@@ -562,24 +548,9 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <div v-if="playerOpen && embedUrl" class="music-embed">
-        <iframe
-          :key="embedUrl"
-          :src="embedUrl"
-          :title="`平台播放器：${currentTrack?.title || currentPlaylist?.title}`"
-          :class="{ 'is-playlist': !!selectedPlaylistId }"
-          allow="autoplay; fullscreen; picture-in-picture"
-          allowfullscreen
-        />
-        <p>
-          播放、暂停和进度由平台播放器控制。<a
-            :href="currentTrack?.url || currentPlaylist?.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            >无法播放？前往原页面 ↗</a
-          >
-        </p>
-      </div>
+      <p id="music-playback-status" class="music-player-status">
+        站内纯音频播放尚未接入，请在官方页面播放。上一首／下一首仅切换所选曲目；播放、暂停、进度和音量请在官方页面控制。
+      </p>
     </section>
     <p v-if="notice" class="music-notice" role="status">{{ notice }}</p>
     <footer class="music-colophon">
