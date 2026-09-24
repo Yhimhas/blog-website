@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
 import { platformPlaylists } from "../musicSources";
-import { dailySelection, shanghaiDate } from "../musicDaily";
+import { shanghaiDate } from "../musicDaily";
+import { useMusicRecommendations } from "../useMusicRecommendations";
 import "../assets/music-atlus.css";
 
 type Scene = "discover" | "library" | "favorites";
@@ -72,31 +73,42 @@ const allTracks = platformPlaylists.flatMap((playlist) =>
 const uniqueTracks = [
   ...new Map(allTracks.map((track) => [track.id, track])).values(),
 ];
-const recommendations = computed(() => dailySelection(uniqueTracks, day.value));
+const { state: recommendationState, recommendations, recommendationDate, localFallback, reload: reloadRecommendations } = useMusicRecommendations({
+  mode: import.meta.env.DEV && import.meta.env.VITE_MUSIC_RECOMMENDATIONS_SOURCE === 'local' ? 'local' : 'api',
+  day,
+  localTracks: uniqueTracks,
+});
+// 接口曲目可独立于本地歌单存在；选择、搜索和本次浏览的收藏均可找到它们。
+const knownTracks = computed(() => [...new Map([
+  ...uniqueTracks, ...recommendations.value,
+].map(track => [track.id, track])).values()]);
+const selectedTrack = ref<(typeof knownTracks.value)[number]>();
 const currentTrack = computed(
   () =>
-    selectedPlaylistId.value ? undefined : (uniqueTracks.find((track) => track.id === selectedId.value) ||
+    selectedPlaylistId.value ? undefined : (selectedTrack.value ||
     recommendations.value[0]),
 );
 const currentPlaylist = computed(() =>
   platformPlaylists.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
 );
 const officialUrl = computed(() => currentTrack.value?.url || currentPlaylist.value?.url);
-const platformName = computed(() => currentPlaylist.value?.platform === 'bilibili' ? 'Bilibili' : '网易云音乐');
+const currentPlatform = computed(() => currentTrack.value?.platform || currentPlaylist.value?.platform);
+const platformName = computed(() => currentPlatform.value === 'bilibili' ? 'Bilibili' : '网易云音乐');
 function openPlaylist(id: string) {
   selectedPlaylistId.value = id;
   selectedId.value = '';
+  selectedTrack.value = undefined;
 }
 const favoriteCount = computed(
   () =>
-    uniqueTracks.filter((track) => favorites.value.includes(track.id)).length,
+    knownTracks.value.filter((track) => favorites.value.includes(track.id)).length,
 );
 const searching = computed(() => Boolean(query.value.trim()));
 const showingDaily = computed(
   () => activeTab.value === "discover" && !searching.value,
 );
 const visibleTracks = computed(() => {
-  const source = showingDaily.value ? recommendations.value : uniqueTracks;
+  const source = showingDaily.value ? recommendations.value : knownTracks.value;
   return source.filter(
     (track) =>
       (activeTab.value !== "favorites" || favorites.value.includes(track.id)) &&
@@ -163,6 +175,7 @@ function moveTab(event: KeyboardEvent) {
 function choose(id: string) {
   selectedPlaylistId.value = '';
   selectedId.value = id;
+  selectedTrack.value = knownTracks.value.find(track => track.id === id);
 }
 function stepTrack(direction: number) {
   const queue = currentPlaylist.value?.tracks || [];
@@ -325,11 +338,11 @@ onBeforeUnmount(() => {
               <span
                 >{{ panelEnglish }} /
                 {{
-                  showingDaily ? day.replaceAll("-", ".") : "YOUR SOUND ARCHIVE"
+                  showingDaily ? (recommendationDate?.replaceAll("-", ".") || '等待服务端日期') : "YOUR SOUND ARCHIVE"
                 }}</span
               ><span
                 >{{
-                  pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
+                  showingDaily && recommendationState.status === 'loading' ? 'LOADING' : showingDaily && recommendationState.status === 'error' ? 'ERROR' : pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
                 }}
                 </span
               >
@@ -381,13 +394,14 @@ onBeforeUnmount(() => {
               <span>{{
                 activeTab === "favorites"
                   ? `${favoriteCount} 首收藏`
-                  : `${uniqueTracks.length} 首收录`
+                  : `${knownTracks.length} 首收录`
               }}</span>
             </div>
             <div
               ref="trackList"
               :class="['music-track-list', { 'is-daily': showingDaily }]"
               aria-live="polite"
+              :aria-busy="showingDaily && recommendationState.status === 'loading'"
             >
               <Transition name="music-source" mode="out-in" @before-enter="resetTrackScroll">
               <div :key="platform" class="music-source-results">
@@ -434,7 +448,13 @@ onBeforeUnmount(() => {
                   <MusicIcon name="heart" />
                 </button>
               </article>
-              <div v-if="!visibleTracks.length" class="music-empty">
+              <div v-if="showingDaily && recommendationState.status !== 'ready'" class="music-empty" role="status">
+                <span aria-hidden="true">↗</span>
+                <h3>{{ recommendationState.status === 'loading' ? '正在加载每日推荐' : recommendationState.status === 'error' ? '每日推荐暂不可用' : '今日暂无推荐' }}</h3>
+                <p>{{ recommendationState.status === 'error' ? recommendationState.message : recommendationState.status === 'loading' ? '正在获取推荐，请稍候。' : localFallback ? '本地曲库暂无可推荐曲目。' : '服务端已生成今日推荐，但暂无候选曲目。' }}</p>
+                <button v-if="recommendationState.status === 'error'" @click="reloadRecommendations">重新加载 ↗</button>
+              </div>
+              <div v-else-if="!visibleTracks.length" class="music-empty">
                 <span aria-hidden="true">{{
                   activeTab === "favorites" ? "♡" : "↗"
                 }}</span>
@@ -481,7 +501,7 @@ onBeforeUnmount(() => {
             <footer class="music-panel-footer">
               <span>{{
                 showingDaily
-                  ? "按上海日期更新 · 选自已收录歌单"
+                  ? localFallback ? "开发期本地 fallback · 非 API 推荐 · 按上海日期更新" : "服务端每日推荐 · Asia/Shanghai"
                   : "所有喜欢，都值得被记住。"
               }}</span
               ><span aria-hidden="true">LISTEN / REPEAT</span>
@@ -500,7 +520,7 @@ onBeforeUnmount(() => {
             <span v-if="currentTrack">{{ currentTrack.artist }} · </span>
             <span>{{ platformName }} · </span>
             <a :href="officialUrl" target="_blank" rel="noopener noreferrer">
-              {{ currentTrack ? (currentPlaylist?.platform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗
+              {{ currentTrack ? (currentPlatform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗
             </a>
           </div>
         </div>
