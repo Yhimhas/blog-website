@@ -148,3 +148,19 @@
 - pnpm 启动器仍报告 Node 20.19.5 版本警告，构建子进程使用 bundled Node；本轮构建成功，未修改全局 Node。
 - 本轮构建产物 `dist/assets/index-ZN8enZ7-.css`、`dist/assets/index-DdMXUjtT.js` 保留；旧构建资源均未删除。`icon-review.png` 是本轮图标核对拼图，仅用于检查，按要求保留。没有删除任何文件。
 `n- 本轮被最终构建替代、保留未删的中间产物：dist/assets/index-POt5G4lD.css、dist/assets/index-CAPABa8h.js。
+
+## 2026-09-25 音乐页人物留白布局
+
+- 仅调整 music-atlus.css：桌面导航、曲目列表、控制区集中到左侧340–480px窄栏；背景固定在视口内，右侧留给人物。取消背景大字叠印，保留斜切菜单、黑白面板、强调色、背景及平台切换动效。
+- 手机将背景拆为顶部310–460px展示区，导航和内容位于图片下方，避免长页面cover放大及人物被面板遮挡。没有修改图片或音乐数据。
+- 验证：类型检查、4篇内容检查、Vite构建通过；1440px桌面左栏右边缘约530px；390px下背景底部369px、菜单顶部398px，二者不重叠；320px/390px无横向溢出；栏目和来源切换正常，浏览器error/warn为空。未实测真实触屏。
+- 本轮构建资源：dist/assets/index-vN_TW_1s.css、dist/assets/index-qg37AtXT.js。没有新增无用试验产物，未删除任何文件。backend/README.md已有修改未触碰。
+
+## 2026-09-25 原目录切换 feat/frontend 与滚动黑边修复
+
+- 按用户要求，先将 feat/backend 的3份未提交修改保存为 stash（说明：before-frontend-switch-2026-09-25: backend notes and music layout），再在原目录切到 feat/frontend。仅将本轮前端CSS和记录的diff补回，保留目标分支已有API接入代码；CSS末尾冲突已合并。前端两文件已暂存但未提交。
+- 后端README修改仍在stash中，未将后端改动带入前端分支，未drop stash。
+- 背景黑边根因：fixed背景top:64px在页头滚走后仍预留64px。改为fixed + inset:0；手机独立展示区保持原规则。
+- 验证：vue-tsc、Vite构建、cached diff检查通过；浏览器滚动351px后背景top=0、bottom=720，与720px视口一致，截图无顶部黑条。当前前端分支每日推荐默认请求Go API；后端不可达时显示真实错误态，本次未改为静默本地回退。
+- 保留残留：D:/blog-website/frontend-worktree（已detach，不再占用feat/frontend，无改动）；D:/blog-website/frontend-layout-transfer-20260925.patch（迁移补丁，已应用）。按文件保留约束未清理。
+- 本轮构建：dist/assets/index-CspBNrZS.css、dist/assets/index-BrvRNWTL.js；旧构建保留。
