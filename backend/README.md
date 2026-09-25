@@ -107,19 +107,21 @@ go test ./internal/storage -run TestPostgresContracts -v -count=1
 
 ---
 
-## 历史 B01 说明（以下为 2026-09-22 内存实现，版本与启动方式以本文上方为准）
+## B01 内存演示参考（启动命令已更新为当前环境）
 
-使用 Go 标准库 `net/http`，module 为 `blog-website/backend`，无第三方依赖，因此没有 `go.sum`。工具链固定为 Go 1.26.7，官方下载及校验信息见 [Go downloads](https://go.dev/dl/)。
+最初的 B01 演示使用 Go 标准库 `net/http`，当时没有第三方依赖。当前项目已引入 Gin/GORM 等依赖并包含 `go.sum`，module 仍为 `blog-website/backend`，`go.mod` 声明的 Go 版本为 **1.27.1**。
 
-当前数据是内存示例：两篇公开文章 `building`、`hello-go`，以及不可公开读取的草稿 `draft-note`。重启重新加载示例，无写入或持久化能力。
+仅在 `DEMO_MODE=true` 时使用内存示例：两篇公开文章 `building`、`hello-go`，以及不可公开读取的草稿 `draft-note`。演示模式重启后重新加载示例，无写入或持久化能力。
 
 ## 运行
 
-安装 Go 1.26.7 并加入 PATH 后，在仓库根目录执行（PowerShell）：
+你已安装 Go 1.27.1 且 PATH 可用，无需重新安装或降级。在仓库根目录运行内存演示（PowerShell）：
 
 ```powershell
 cd backend
 go version
+$env:APP_ENV = 'development'
+$env:DEMO_MODE = 'true'
 # 如有输出，先确认占用进程；服务不会自动结束其他进程。
 Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue
 go run ./cmd/api
@@ -127,15 +129,15 @@ go run ./cmd/api
 
 默认监听 `127.0.0.1:8081`。可在启动前通过 `$env:HTTP_ADDR = '127.0.0.1:8082'` 修改地址；端口占用会报错并退出。Ctrl+C 触发关闭，最多等待 5 秒。访问日志使用 JSON，包含与响应 `X-Request-ID` 相同的 `requestId`。
 
-本次开发使用的便携工具链位于仓库外的 `D:\blog-website\.tools\go1.26.7\go`，本机未配置 PATH 时可在当前 PowerShell 使用：
+当前 Go 安装目录为 `D:\Golang`。检查版本与实际命中的可执行文件：
 
 ```powershell
-$env:Path = 'D:\blog-website\.tools\go1.26.7\go\bin;' + $env:Path
-$env:GOCACHE = 'D:\blog-website\.tools\go-cache'
-$env:GOTOOLCHAIN = 'local'
+go version
+(Get-Command go).Source
+go env GOROOT
 ```
 
-这些设置只影响当前终端，不需要全局安装或修改系统环境变量。
+历史便携工具链 `D:\blog-website\.tools\go1.26.7\go` 仅作为旧文件保留，不应再加入当前 PATH。恢复正式后端前设置 `$env:DEMO_MODE = 'false'`，并按本文上方配置数据库。
 
 ## API
 
@@ -190,6 +192,6 @@ go vet ./...
 
 测试通过 `httptest` 直接验证 HTTP handler，无需先启动服务；覆盖响应格式、requestId、状态码、草稿/归档隔离、正文隔离、排序、分页边界、筛选与 Unicode 参数限制。`internal/blog` 是内存业务规则和 DTO；`internal/platform` 是 HTTP 边界；`cmd/api` 负责装配、配置和服务生命周期。
 
-本阶段未实现数据库、认证、Gin、ready、分类/标签独立接口、音乐 API、OpenAPI 或前端联调；Vue/Vite 保持现状，不引入 Nuxt。开始前端联调前按开发指南补充 OpenAPI。
+以上接口与测试说明仅针对保留的 B01 演示。当前正式后端已实现数据库、认证、Gin、ready、分类/标签、音乐 API 和 OpenAPI；前端联调仍待完成，详细状态以本文上方为准。
 
-开发下载包与缓存保留在 `D:\blog-website\.tools\`，不属于 Git 仓库；其中 zip 为安装残留，可在确认后清理，解压工具链用于运行，go-cache 用于后续测试加速。本次不删除任何文件。
+旧开发下载包与缓存保留在 `D:\blog-website\.tools\`，不属于 Git 仓库；其中 zip 和 Go 1.26.7 便携工具链为历史遗留，当前 Go 1.27.1 不依赖它们。本次没有删除这些文件，也没有生成新的试验产物。
