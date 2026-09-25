@@ -1,5 +1,7 @@
 # 网易云音乐专用后端技术文档
 
+2026-09-25 实施补充：适配器、完整性校验、快照事务、异步任务及公开/管理接口已加入 backend；首次无快照固定返回 200 + 空曲目数组，配合歌单 syncStatus 展示。每日自动同步默认关闭，可设置 MUSIC_AUTO_SYNC=true 启用。本机尚无 PostgreSQL，真实歌单同步与数据库集成验收尚未执行，不能将 fixture 测试视为同步成功。运行方法见 [backend/README.md](../backend/README.md)。
+
 版本：v1.0  
 日期：2026-09-21  
 状态：实现契约，尚未创建 backend 工程  

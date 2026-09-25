@@ -1,0 +1,6 @@
+# Local credentials and binaries; retain files locally.
+.env
+.env.local
+.env.*.local
+backend/*.exe
+backend/coverage.out
