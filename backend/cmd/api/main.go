@@ -11,7 +11,11 @@ import (
 	"time"
 
 	"blog-website/backend/internal/blog"
+	"blog-website/backend/internal/music"
+	"blog-website/backend/internal/music/provider/netease"
 	"blog-website/backend/internal/platform"
+	"blog-website/backend/internal/recommendation"
+	"blog-website/backend/internal/storage"
 )
 
 func main() {
@@ -23,20 +27,42 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:8081"
-	}
-	server := &http.Server{
-		Addr: addr, Handler: platform.NewHandler(blog.NewDemoService(), logger),
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
-		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
+	cfg, err := platform.LoadConfig()
+	if err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	var handler http.Handler
+	storageName := "postgresql"
+	if cfg.Demo {
+		handler = platform.NewHandler(blog.NewDemoService(), logger)
+		storageName = "in-memory demo (explicit opt-in)"
+	} else {
+		db, err := storage.Open(cfg.DatabaseURL)
+		if err != nil {
+			return err
+		}
+		pool, _ := db.DB()
+		defer pool.Close()
+		musicService := music.New(db, netease.New(), ctx)
+		defer musicService.Stop()
+		handler = platform.NewDatabaseHandler(db, cfg, logger, musicService)
+		jobsDone := make(chan struct{})
+		go func() {
+			defer close(jobsDone)
+			platform.RunJobs(ctx, musicService, recommendation.Service{DB: db}, logger, cfg.MusicAutoSync)
+		}()
+		defer func() { stop(); <-jobsDone }()
+	}
+	server := &http.Server{
+		Addr: cfg.Addr, Handler: handler,
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
+	}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
-	logger.Info("starting API", "addr", addr, "storage", "in-memory demo")
+	logger.Info("starting API", "addr", cfg.Addr, "storage", storageName)
 	select {
 	case err := <-done:
 		return err
