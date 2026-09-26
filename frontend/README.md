@@ -10,7 +10,27 @@
 
 ## 文章维护
 
-博客读取 `src/content/posts/*.md`。新增文章、发布日期、摘要、标签和 slug 的填写方式见 [本地文章内容库说明](src/content/README.md)。提交前运行 `pnpm check:content` 和 `pnpm test:content`；`pnpm build` 也会校验内容。
+博客已接入 Go API：`/blog` 为公开列表，`/blog/:slug` 为详情，`/admin` 提供站长登录、草稿创建、Markdown 编辑预览、保存和发布。搜索匹配标题/摘要，分类和标签使用后端 slug，列表每页 20 篇。错误和空列表直接显示真实状态，不回退本地示例。
+
+原 `src/content/posts/*.md` 保留并继续校验，但不再作为公开页面数据源，也不会自动导入数据库。
+
+### 本地闭环
+
+1. 按 [后端说明](../backend/README.md) 配置 PostgreSQL、迁移并创建站长账号，以 `DEMO_MODE=false` 启动 Go API。内存 Demo 不支持后台。
+2. 在 frontend 运行 `npm run dev -- --host localhost --port 5173 --strictPort`，打开 `http://localhost:5173/admin`。后端 `ALLOWED_ORIGIN` 须为相同的 `http://localhost:5173`，不能混用 127.0.0.1 或其他端口。
+3. 登录 → 新建文章 → 输入标题、唯一 slug、Markdown → 保存文章。此时公开地址应为 404。
+4. 点击「保存并发布」，再点击公开访问链接。无登录浏览器也应能访问 `/blog/<slug>`，并在列表找到文章。
+5. 已发布文章保存后立即更新公开内容；API 尚无独立的发布后修订草稿。修改提交 version，409 时保留输入并提示重新读取。重新读取会确认是否放弃未保存输入。
+
+Cookie 为 HttpOnly，CSRF token 仅放内存。刷新恢复会话；401/CSRF 失效时重新登录，编辑内容暂留页面。内容不写 localStorage，刷新/关闭前提供未保存提示。分类和标签可留空，目前通过后端维护，页面不提供创建。
+
+### 验证与部署
+
+运行 `npm run test:blog` 和 `npm run build`（包含类型检查）。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染；不等于真实数据库或浏览器端到端验收。未配置数据库时 PostgreSQL 集成测试会 SKIP。
+
+生产环境将同域 `/api/` 代理到 Go，保留 Origin 和 Cookie；前端其他路径使用 SPA fallback 到 index.html，确保刷新 `/admin` 和 `/blog/<slug>` 可用。后端配置 HTTPS ALLOWED_ORIGIN、APP_ENV=production 和 Secure Cookie。Vite dev proxy 不随构建部署。
+
+构建已设置 `emptyOutDir: false`，保留旧 dist 输出；旧 hash 资源可能累积，发布时使用当前 index.html 引用的资源，清理须由站长确认。
 
 This template should help get you started developing with Vue 3 in Vite.
 

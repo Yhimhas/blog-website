@@ -11,6 +11,7 @@
     "check:content": "node --experimental-strip-types scripts/check-content.mjs",
     "test:content": "node --experimental-strip-types --test scripts/content.test.mjs",
     "test:music": "node --experimental-strip-types --test scripts/music-api.test.mjs",
+    "test:blog": "node --experimental-strip-types --test scripts/blog-api.test.mjs",
     "type-check": "vue-tsc --build",
     "sync:music": "node scripts/sync-bilibili.mjs"
   },

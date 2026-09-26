@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: '/', component: HomeView, meta: { title: '首页' } },
     { path: '/blog', component: BlogView, meta: { title: '博客' } },
     { path: '/blog/:id', component: ArticleView, props: true, meta: { title: '文章' } },
+    { path: '/admin', component: () => import('./views/AdminView.vue'), meta: { title: '文章管理' } },
     { path: '/music', component: MusicView, meta: { title: '音乐' } },
     { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: '页面不存在' } },
   ],

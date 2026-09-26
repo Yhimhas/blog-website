@@ -6,6 +6,8 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Preserve existing output files; cleanup is always an explicit owner action.
+  build: { emptyOutDir: false },
   plugins: [
     vue(),
     vueDevTools(),

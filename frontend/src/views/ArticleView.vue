@@ -1,24 +1,45 @@
 <script setup lang="ts">
-import SiteIcon from "../components/SiteIcon.vue";
-import { computed } from 'vue'
+import SiteIcon from '../components/SiteIcon.vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { posts } from '../content'
-// Route props retain the outgoing article while its leave animation finishes.
+import { blogApi, ApiError, type PostDetail } from '../blogApi'
+import { renderMarkdown } from '../markdown'
 const props = defineProps<{ id: string }>()
-const post = computed(() => posts.find(item => item.id === props.id))
+const post = ref<PostDetail>()
+const loading = ref(true)
+const error = ref('')
+const missing = ref(false)
+const retry = ref(0)
+const html = computed(() => renderMarkdown(post.value?.contentMarkdown || ''))
+watch(() => [props.id, retry.value], async (_, __, cleanup) => {
+  const controller = new AbortController()
+  cleanup(() => controller.abort())
+  loading.value = true; post.value = undefined; error.value = ''; missing.value = false
+  try {
+    const result = await blogApi.post(props.id, controller.signal)
+    if (!controller.signal.aborted) { post.value = result; document.title = result.title + ' · Yhimhas / NOTES' }
+  } catch (e) {
+    if (!controller.signal.aborted) {
+      missing.value = e instanceof ApiError && e.status === 404
+      error.value = e instanceof Error ? e.message : '文章加载失败。'
+    }
+  } finally { if (!controller.signal.aborted) loading.value = false }
+}, { immediate: true })
 </script>
 
 <template>
-  <article v-if="post" class="article-page">
-    <nav class="article-breadcrumb" aria-label="面包屑"><RouterLink to="/blog">博客</RouterLink><span aria-hidden="true"> / </span><span>{{ post.category }}</span></nav>
+  <section v-if="loading" class="article-page" role="status">正在加载文章…</section>
+  <section v-else-if="error && !missing" class="article-page" role="alert">{{ error }} <button @click="retry++">重试</button></section>
+  <article v-else-if="post" class="article-page">
+    <nav class="article-breadcrumb" aria-label="面包屑"><RouterLink to="/blog">博客</RouterLink><span aria-hidden="true"> / </span><span>{{ post.category?.name || '未分类' }}</span></nav>
     <header class="article-header">
-      <div class="eyebrow">JOURNAL / <time :datetime="post.published">{{ post.date }}</time></div>
+      <div class="eyebrow">JOURNAL / <time :datetime="post.publishedAt">{{ new Date(post.publishedAt).toLocaleDateString('zh-CN') }}</time></div>
       <h1>{{ post.title }}</h1>
-      <div class="tags"><span v-for="tag in post.tags" :key="tag"># {{ tag }}</span></div>
+      <div class="tags"><span v-for="tag in post.tags" :key="tag.id"># {{ tag.name }}</span></div>
     </header>
     <div class="reading-body">
       <p class="reading-intro">{{ post.summary }}</p>
-      <div class="markdown-body" v-html="post.html" />
+      <div class="markdown-body" v-html="html" />
     </div>
     <div class="article-end"><span>— END OF NOTE —</span><RouterLink to="/blog" class="primary-link"><SiteIcon name="back" /> 返回文章列表</RouterLink></div>
   </article>
