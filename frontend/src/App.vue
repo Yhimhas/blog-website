@@ -55,6 +55,8 @@ const nav = [
   { path: "/", label: "首页", symbol: "⌂" },
   { path: "/blog", label: "博客", symbol: "layers" },
   { path: "/music", label: "音乐", symbol: "wave" },
+  { path: "/about", label: "关于", symbol: "sparkle" },
+  { path: "/admin", label: "管理后台", symbol: "layers" },
 ];
 const active = computed(() =>
   route.path.startsWith("/blog") ? "/blog" : route.path,
