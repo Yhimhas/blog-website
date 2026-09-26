@@ -15,4 +15,10 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  server: {
+    // Keep the browser same-origin while forwarding API calls to the Go service.
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8081', changeOrigin: false },
+    },
+  },
 })

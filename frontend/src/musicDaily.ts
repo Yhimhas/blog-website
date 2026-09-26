@@ -1,4 +1,4 @@
-/** Frontend daily selection until the Go recommendation endpoint is available. */
+/** Shanghai calendar helper. Legacy local selection is retained but no longer used by the music page. */
 export function shanghaiDate(now = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',

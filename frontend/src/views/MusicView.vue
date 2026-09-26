@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
 import { platformPlaylists } from "../musicSources";
-import { dailySelection, shanghaiDate } from "../musicDaily";
+import { shanghaiDate } from "../musicDaily";
+import { fetchTodayRecommendations, parseRecommendations, RecommendationError, type RecommendedTrack } from "../musicApi";
 import "../assets/music-atlus.css";
 
 type Scene = "discover" | "library" | "favorites";
@@ -69,34 +70,44 @@ const allTracks = platformPlaylists.flatMap((playlist) =>
     platform: playlist.platform,
   })),
 );
-const uniqueTracks = [
+const localTracks = [
   ...new Map(allTracks.map((track) => [track.id, track])).values(),
 ];
-const recommendations = computed(() => dailySelection(uniqueTracks, day.value));
+const recommendations = ref<RecommendedTrack[]>([]);
+const savedRecommendedTracks = ref<RecommendedTrack[]>([]);
+const recommendationDate = ref('');
+const recommendationLoading = ref(true);
+const recommendationError = ref('');
+const uniqueTracks = computed(() => [...new Map(
+  [...localTracks, ...savedRecommendedTracks.value, ...recommendations.value].map(track => [track.id, track]),
+).values()]);
 const currentTrack = computed(
   () =>
-    selectedPlaylistId.value ? undefined : (uniqueTracks.find((track) => track.id === selectedId.value) ||
+    selectedPlaylistId.value ? undefined : (uniqueTracks.value.find((track) => track.id === selectedId.value) ||
     recommendations.value[0]),
 );
 const currentPlaylist = computed(() =>
   platformPlaylists.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
 );
 const officialUrl = computed(() => currentTrack.value?.url || currentPlaylist.value?.url);
-const platformName = computed(() => currentPlaylist.value?.platform === 'bilibili' ? 'Bilibili' : '网易云音乐');
+const currentPlatform = computed(() => currentTrack.value?.platform || currentPlaylist.value?.platform);
+const platformName = computed(() => currentPlatform.value === 'bilibili' ? 'Bilibili' : '网易云音乐');
+const trackQueue = computed(() => currentTrack.value && recommendations.value.some(track => track.id === currentTrack.value?.id)
+  ? recommendations.value : currentPlaylist.value?.tracks || []);
 function openPlaylist(id: string) {
   selectedPlaylistId.value = id;
   selectedId.value = '';
 }
 const favoriteCount = computed(
   () =>
-    uniqueTracks.filter((track) => favorites.value.includes(track.id)).length,
+    uniqueTracks.value.filter((track) => favorites.value.includes(track.id)).length,
 );
 const searching = computed(() => Boolean(query.value.trim()));
 const showingDaily = computed(
   () => activeTab.value === "discover" && !searching.value,
 );
 const visibleTracks = computed(() => {
-  const source = showingDaily.value ? recommendations.value : uniqueTracks;
+  const source = showingDaily.value ? recommendations.value : uniqueTracks.value;
   return source.filter(
     (track) =>
       (activeTab.value !== "favorites" || favorites.value.includes(track.id)) &&
@@ -165,7 +176,7 @@ function choose(id: string) {
   selectedId.value = id;
 }
 function stepTrack(direction: number) {
-  const queue = currentPlaylist.value?.tracks || [];
+  const queue = trackQueue.value;
   if (queue.length < 2) return;
   const index = queue.findIndex((track) => track.id === currentTrack.value?.id);
   const track = queue[(index + direction + queue.length) % queue.length];
@@ -175,7 +186,18 @@ function favorite(id: string) {
   favorites.value = favorites.value.includes(id)
     ? favorites.value.filter((item) => item !== id)
     : [...favorites.value, id];
+  savedRecommendedTracks.value = [...new Map(
+    [...savedRecommendedTracks.value, ...recommendations.value]
+      .filter(track => favorites.value.includes(track.id)).map(track => [track.id, track]),
+  ).values()];
   try {
+    localStorage.setItem('lin-music-favorite-snapshots', JSON.stringify({ data: {
+      date: day.value, timezone: 'Asia/Shanghai', status: 'ready',
+      items: savedRecommendedTracks.value.map(track => ({
+        id: track.id, title: track.title, author: track.artist, provider: track.platform,
+        sourceUrl: track.url, playlistId: track.playlistId, availability: 'available',
+      })),
+    } }));
     localStorage.setItem(
       "lin-music-favorites",
       JSON.stringify(favorites.value),
@@ -196,11 +218,48 @@ function cycleBackground() {
     notice.value = "背景偏好暂时无法保存，本次浏览仍可切换。";
   }
 }
+let recommendationRequest: AbortController | undefined;
+async function loadRecommendations() {
+  recommendationRequest?.abort();
+  const request = new AbortController();
+  recommendationRequest = request;
+  recommendationLoading.value = true;
+  recommendationError.value = '';
+  const timeout = setTimeout(() => request.abort(), 10_000);
+  try {
+    const result = await fetchTodayRecommendations(request.signal);
+    if (recommendationRequest !== request) return;
+    recommendations.value = result.items;
+    recommendationDate.value = result.date;
+  } catch (error) {
+    if (recommendationRequest !== request) return;
+    recommendationError.value = error instanceof RecommendationError
+      ? error.message : '推荐加载失败，请检查网络后重试。';
+  } finally {
+    clearTimeout(timeout);
+    if (recommendationRequest === request) recommendationLoading.value = false;
+  }
+}
 function updateDay() {
-  day.value = shanghaiDate();
+  if (document.visibilityState === 'hidden') return;
+  const today = shanghaiDate();
+  if (today !== day.value) {
+    day.value = today;
+    recommendations.value = [];
+    recommendationDate.value = '';
+    void loadRecommendations();
+  } else if (!recommendationLoading.value && recommendationError.value) {
+    void loadRecommendations();
+  }
 }
 let dayTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  try {
+    const snapshots = localStorage.getItem('lin-music-favorite-snapshots');
+    if (snapshots) savedRecommendedTracks.value = parseRecommendations(JSON.parse(snapshots)).items;
+  } catch {
+    notice.value = '部分收藏曲目信息暂时无法读取。';
+  }
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem("lin-music-favorites") || "[]",
@@ -227,10 +286,14 @@ onMounted(() => {
   } catch {
     notice.value = "浏览器偏好暂时无法读取，已使用默认设置。";
   }
+  void loadRecommendations();
   dayTimer = setInterval(updateDay, 30_000);
   document.addEventListener("visibilitychange", updateDay);
 });
 onBeforeUnmount(() => {
+  const request = recommendationRequest;
+  recommendationRequest = undefined;
+  request?.abort();
   clearInterval(dayTimer);
   document.removeEventListener("visibilitychange", updateDay);
 });
@@ -325,7 +388,7 @@ onBeforeUnmount(() => {
               <span
                 >{{ panelEnglish }} /
                 {{
-                  showingDaily ? day.replaceAll("-", ".") : "YOUR SOUND ARCHIVE"
+                  showingDaily ? (recommendationDate || day).replaceAll("-", ".") : "YOUR SOUND ARCHIVE"
                 }}</span
               ><span
                 >{{
@@ -388,6 +451,7 @@ onBeforeUnmount(() => {
               ref="trackList"
               :class="['music-track-list', { 'is-daily': showingDaily }]"
               aria-live="polite"
+              :aria-busy="showingDaily && recommendationLoading"
             >
               <Transition name="music-source" mode="out-in" @before-enter="resetTrackScroll">
               <div :key="platform" class="music-source-results">
@@ -440,7 +504,7 @@ onBeforeUnmount(() => {
                 }}</span>
                 <h3>
                   {{
-                    pendingPlaylist ? neteasePlaylist?.title : searching
+                    showingDaily ? (recommendationLoading ? '正在加载每日推荐' : recommendationError ? '今日推荐暂不可用' : '今天暂无推荐曲目') : pendingPlaylist ? neteasePlaylist?.title : searching
                       ? "暂时没有找到这段旋律"
                       : platform === "netease" && activeTab === 'favorites'
                         ? "还没有收藏的网易云曲目"
@@ -451,13 +515,14 @@ onBeforeUnmount(() => {
                 </h3>
                 <p>
                   {{
-                    pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
+                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
                       ? "换一个歌名或作者试试。"
                       : activeTab === "favorites"
                         ? "点击曲目旁的爱心，就能在这里再次遇见。"
                         : "试试其他来源，或稍后再来。"
                   }}
                 </p>
+                <button v-if="showingDaily && recommendationError && !recommendationLoading" @click="loadRecommendations">重新加载 ↗</button>
                 <div v-if="pendingPlaylist && neteasePlaylist" class="music-playlist-actions">
                   <button @click="openPlaylist(neteasePlaylist.id)">选择此歌单</button>
                   <a :href="neteasePlaylist.url" target="_blank" rel="noopener noreferrer">在网易云查看歌单 ↗</a>
@@ -503,7 +568,7 @@ onBeforeUnmount(() => {
             :href="officialUrl"
             target="_blank"
             rel="noopener noreferrer"
-            >{{ currentTrack ? (currentPlaylist?.platform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗</a
+            >{{ currentTrack ? (currentPlatform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗</a
           >
           </div>
         </div>
@@ -524,7 +589,7 @@ onBeforeUnmount(() => {
             <MusicIcon name="heart" />
           </button>
           <button
-            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            :disabled="trackQueue.length < 2"
             aria-label="上一首"
             @click="stepTrack(-1)"
           >
@@ -540,7 +605,7 @@ onBeforeUnmount(() => {
             <span>在{{ platformName }}打开 ↗</span>
           </a>
           <button
-            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            :disabled="trackQueue.length < 2"
             aria-label="下一首"
             @click="stepTrack(1)"
           >
