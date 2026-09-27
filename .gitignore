@@ -4,3 +4,6 @@
 .env.*.local
 backend/*.exe
 backend/coverage.out
+
+# Frontend sources live on feat/frontend; keep local dependencies and output.
+/frontend/
