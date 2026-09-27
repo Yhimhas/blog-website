@@ -12,9 +12,10 @@ export const router = createRouter({
     { path: '/', component: HomeView, meta: { title: '首页' } },
     { path: '/blog', component: BlogView, meta: { title: '博客' } },
     { path: '/blog/:id', component: ArticleView, props: true, meta: { title: '文章' } },
+    { path: '/admin', component: () => import('./views/AdminView.vue'), meta: { title: '文章管理' } },
     { path: '/music', component: MusicView, meta: { title: '音乐' } },
     { path: '/about', component: () => import('./views/AboutView.vue'), meta: { title: '关于' } },
-    { path: '/admin', component: () => import('./views/AdminView.vue'), meta: { title: '管理后台' } },
+    { path: '/admin/local', component: () => import('./views/LocalAdminView.vue'), meta: { title: '本地草稿' } },
     { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: '页面不存在' } },
   ],
   async scrollBehavior(to, from, savedPosition) {

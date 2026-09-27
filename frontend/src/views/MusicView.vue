@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
 import { platformPlaylists } from "../musicSources";
 import { shanghaiDate } from "../musicDaily";
+import { fetchTodayRecommendations, parseRecommendations, type RecommendedTrack } from "../musicApi";
 import { useMusicRecommendations } from "../useMusicRecommendations";
 import "../assets/music-atlus.css";
 
@@ -70,22 +71,28 @@ const allTracks = platformPlaylists.flatMap((playlist) =>
     platform: playlist.platform,
   })),
 );
-const uniqueTracks = [
+const localTracks = [
   ...new Map(allTracks.map((track) => [track.id, track])).values(),
 ];
-const { state: recommendationState, recommendations, recommendationDate, localFallback, reload: reloadRecommendations } = useMusicRecommendations({
+const savedRecommendedTracks = ref<RecommendedTrack[]>([]);
+const { state: recommendationState, recommendations, recommendationDate, localFallback, reload: loadRecommendations } = useMusicRecommendations({
   mode: import.meta.env.DEV && import.meta.env.VITE_MUSIC_RECOMMENDATIONS_SOURCE === 'local' ? 'local' : 'api',
   day,
-  localTracks: uniqueTracks,
+  localTracks,
+  request: async signal => {
+    const result = await fetchTodayRecommendations(signal);
+    return { ...result, timezone: 'Asia/Shanghai' as const, items: result.items.map(track => ({ ...track, embedUrl: '' })) };
+  },
 });
-// 接口曲目可独立于本地歌单存在；选择、搜索和本次浏览的收藏均可找到它们。
-const knownTracks = computed(() => [...new Map([
-  ...uniqueTracks, ...recommendations.value,
-].map(track => [track.id, track])).values()]);
-const selectedTrack = ref<(typeof knownTracks.value)[number]>();
+const recommendationLoading = computed(() => recommendationState.value.status === 'loading');
+const recommendationError = computed(() => recommendationState.value.status === 'error' ? recommendationState.value.message : '');
+const selectedTrack = ref<RecommendedTrack>();
+const uniqueTracks = computed(() => [...new Map(
+  [...localTracks, ...savedRecommendedTracks.value, ...recommendations.value].map(track => [track.id, track]),
+).values()]);
 const currentTrack = computed(
   () =>
-    selectedPlaylistId.value ? undefined : (selectedTrack.value ||
+    selectedPlaylistId.value ? undefined : (selectedTrack.value || uniqueTracks.value.find((track) => track.id === selectedId.value) ||
     recommendations.value[0]),
 );
 const currentPlaylist = computed(() =>
@@ -94,6 +101,8 @@ const currentPlaylist = computed(() =>
 const officialUrl = computed(() => currentTrack.value?.url || currentPlaylist.value?.url);
 const currentPlatform = computed(() => currentTrack.value?.platform || currentPlaylist.value?.platform);
 const platformName = computed(() => currentPlatform.value === 'bilibili' ? 'Bilibili' : '网易云音乐');
+const trackQueue = computed(() => currentTrack.value && recommendations.value.some(track => track.id === currentTrack.value?.id)
+  ? recommendations.value : currentPlaylist.value?.tracks || []);
 function openPlaylist(id: string) {
   selectedPlaylistId.value = id;
   selectedId.value = '';
@@ -101,14 +110,14 @@ function openPlaylist(id: string) {
 }
 const favoriteCount = computed(
   () =>
-    knownTracks.value.filter((track) => favorites.value.includes(track.id)).length,
+    uniqueTracks.value.filter((track) => favorites.value.includes(track.id)).length,
 );
 const searching = computed(() => Boolean(query.value.trim()));
 const showingDaily = computed(
   () => activeTab.value === "discover" && !searching.value,
 );
 const visibleTracks = computed(() => {
-  const source = showingDaily.value ? recommendations.value : knownTracks.value;
+  const source = showingDaily.value ? recommendations.value : uniqueTracks.value;
   return source.filter(
     (track) =>
       (activeTab.value !== "favorites" || favorites.value.includes(track.id)) &&
@@ -175,10 +184,10 @@ function moveTab(event: KeyboardEvent) {
 function choose(id: string) {
   selectedPlaylistId.value = '';
   selectedId.value = id;
-  selectedTrack.value = knownTracks.value.find(track => track.id === id);
+  selectedTrack.value = uniqueTracks.value.find(track => track.id === id);
 }
 function stepTrack(direction: number) {
-  const queue = currentPlaylist.value?.tracks || [];
+  const queue = trackQueue.value;
   if (queue.length < 2) return;
   const index = queue.findIndex((track) => track.id === currentTrack.value?.id);
   const track = queue[(index + direction + queue.length) % queue.length];
@@ -188,7 +197,18 @@ function favorite(id: string) {
   favorites.value = favorites.value.includes(id)
     ? favorites.value.filter((item) => item !== id)
     : [...favorites.value, id];
+  savedRecommendedTracks.value = [...new Map(
+    [...savedRecommendedTracks.value, ...recommendations.value]
+      .filter(track => favorites.value.includes(track.id)).map(track => [track.id, track]),
+  ).values()];
   try {
+    localStorage.setItem('lin-music-favorite-snapshots', JSON.stringify({ data: {
+      date: day.value, timezone: 'Asia/Shanghai', status: 'ready',
+      items: savedRecommendedTracks.value.map(track => ({
+        id: track.id, title: track.title, author: track.artist, provider: track.platform,
+        sourceUrl: track.url, playlistId: track.playlistId, availability: 'available',
+      })),
+    } }));
     localStorage.setItem(
       "lin-music-favorites",
       JSON.stringify(favorites.value),
@@ -210,10 +230,19 @@ function cycleBackground() {
   }
 }
 function updateDay() {
-  day.value = shanghaiDate();
+  if (document.visibilityState === 'hidden') return;
+  const today = shanghaiDate();
+  if (today !== day.value) day.value = today;
+  else if (recommendationError.value) void loadRecommendations();
 }
 let dayTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  try {
+    const snapshots = localStorage.getItem('lin-music-favorite-snapshots');
+    if (snapshots) savedRecommendedTracks.value = parseRecommendations(JSON.parse(snapshots)).items;
+  } catch {
+    notice.value = '部分收藏曲目信息暂时无法读取。';
+  }
   try {
     const saved: unknown = JSON.parse(
       localStorage.getItem("lin-music-favorites") || "[]",
@@ -338,11 +367,11 @@ onBeforeUnmount(() => {
               <span
                 >{{ panelEnglish }} /
                 {{
-                  showingDaily ? (recommendationDate?.replaceAll("-", ".") || '等待服务端日期') : "YOUR SOUND ARCHIVE"
+                  showingDaily ? (recommendationDate?.replaceAll("-", ".") || "等待服务端日期") : "YOUR SOUND ARCHIVE"
                 }}</span
               ><span
                 >{{
-                  showingDaily && recommendationState.status === 'loading' ? 'LOADING' : showingDaily && recommendationState.status === 'error' ? 'ERROR' : pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
+                  pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
                 }}
                 </span
               >
@@ -394,14 +423,14 @@ onBeforeUnmount(() => {
               <span>{{
                 activeTab === "favorites"
                   ? `${favoriteCount} 首收藏`
-                  : `${knownTracks.length} 首收录`
+                  : `${uniqueTracks.length} 首收录`
               }}</span>
             </div>
             <div
               ref="trackList"
               :class="['music-track-list', { 'is-daily': showingDaily }]"
               aria-live="polite"
-              :aria-busy="showingDaily && recommendationState.status === 'loading'"
+              :aria-busy="showingDaily && recommendationLoading"
             >
               <Transition name="music-source" mode="out-in" @before-enter="resetTrackScroll">
               <div :key="platform" class="music-source-results">
@@ -448,19 +477,13 @@ onBeforeUnmount(() => {
                   <MusicIcon name="heart" />
                 </button>
               </article>
-              <div v-if="showingDaily && recommendationState.status !== 'ready'" class="music-empty" role="status">
-                <span aria-hidden="true">↗</span>
-                <h3>{{ recommendationState.status === 'loading' ? '正在加载每日推荐' : recommendationState.status === 'error' ? '每日推荐暂不可用' : '今日暂无推荐' }}</h3>
-                <p>{{ recommendationState.status === 'error' ? recommendationState.message : recommendationState.status === 'loading' ? '正在获取推荐，请稍候。' : localFallback ? '本地曲库暂无可推荐曲目。' : '服务端已生成今日推荐，但暂无候选曲目。' }}</p>
-                <button v-if="recommendationState.status === 'error'" @click="reloadRecommendations">重新加载 ↗</button>
-              </div>
-              <div v-else-if="!visibleTracks.length" class="music-empty">
+              <div v-if="!visibleTracks.length" class="music-empty">
                 <span aria-hidden="true">{{
                   activeTab === "favorites" ? "♡" : "↗"
                 }}</span>
                 <h3>
                   {{
-                    pendingPlaylist ? neteasePlaylist?.title : searching
+                    showingDaily ? (recommendationLoading ? '正在加载每日推荐' : recommendationError ? '今日推荐暂不可用' : '今天暂无推荐曲目') : pendingPlaylist ? neteasePlaylist?.title : searching
                       ? "暂时没有找到这段旋律"
                       : platform === "netease" && activeTab === 'favorites'
                         ? "还没有收藏的网易云曲目"
@@ -471,13 +494,14 @@ onBeforeUnmount(() => {
                 </h3>
                 <p>
                   {{
-                    pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
+                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
                       ? "换一个歌名或作者试试。"
                       : activeTab === "favorites"
                         ? "点击曲目旁的爱心，就能在这里再次遇见。"
                         : "试试其他来源，或稍后再来。"
                   }}
                 </p>
+                <button v-if="showingDaily && recommendationError && !recommendationLoading" @click="loadRecommendations">重新加载 ↗</button>
                 <div v-if="pendingPlaylist && neteasePlaylist" class="music-playlist-actions">
                   <button @click="openPlaylist(neteasePlaylist.id)">选择此歌单</button>
                   <a :href="neteasePlaylist.url" target="_blank" rel="noopener noreferrer">在网易云查看歌单 ↗</a>
@@ -501,7 +525,7 @@ onBeforeUnmount(() => {
             <footer class="music-panel-footer">
               <span>{{
                 showingDaily
-                  ? localFallback ? "开发期本地 fallback · 非 API 推荐 · 按上海日期更新" : "服务端每日推荐 · Asia/Shanghai"
+                  ? (localFallback ? "开发期本地 fallback · 非 API 推荐" : "服务端每日推荐 · Asia/Shanghai")
                   : "所有喜欢，都值得被记住。"
               }}</span
               ><span aria-hidden="true">LISTEN / REPEAT</span>
@@ -519,9 +543,12 @@ onBeforeUnmount(() => {
           <div v-if="officialUrl" class="music-player-attribution">
             <span v-if="currentTrack">{{ currentTrack.artist }} · </span>
             <span>{{ platformName }} · </span>
-            <a :href="officialUrl" target="_blank" rel="noopener noreferrer">
-              {{ currentTrack ? (currentPlatform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗
-            </a>
+            <a
+            :href="officialUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            >{{ currentTrack ? (currentPlatform === 'bilibili' ? '原视频' : '原曲目') : '原歌单' }} ↗</a
+          >
           </div>
         </div>
         <div class="music-player-controls">
@@ -541,7 +568,7 @@ onBeforeUnmount(() => {
             <MusicIcon name="heart" />
           </button>
           <button
-            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            :disabled="trackQueue.length < 2"
             aria-label="上一首"
             @click="stepTrack(-1)"
           >
@@ -557,7 +584,7 @@ onBeforeUnmount(() => {
             <span>在{{ platformName }}打开 ↗</span>
           </a>
           <button
-            :disabled="(currentPlaylist?.tracks.length || 0) < 2"
+            :disabled="trackQueue.length < 2"
             aria-label="下一首"
             @click="stepTrack(1)"
           >

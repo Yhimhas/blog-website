@@ -3,7 +3,7 @@ import SiteIcon from "./components/SiteIcon.vue";
 import { computed, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { FieldProvider } from "@field-lab/vue";
-import { posts } from "./content";
+
 import { pageLeaving, pageReady } from "./pageTransition";
 import EntryIntro from "./components/EntryIntro.vue";
 const route = useRoute();
@@ -59,14 +59,14 @@ const nav = [
   { path: "/admin", label: "管理后台", symbol: "layers" },
 ];
 const active = computed(() =>
-  route.path.startsWith("/blog") ? "/blog" : route.path,
+  route.path.startsWith("/blog") ? "/blog" : route.path.startsWith("/admin") ? "/admin" : route.path,
 );
 watch(
   () => [route.fullPath, route.meta.title],
   () => {
     expanded.value = false;
     const title = route.path.startsWith("/blog/")
-      ? posts.find((post) => post.id === route.params.id)?.title || "文章不存在"
+      ? "文章"
       : route.meta.title || "首页";
     document.title = `${title} · Yhimhas / NOTES`;
   },
