@@ -4,3 +4,5 @@
 .env.*.local
 backend/*.exe
 backend/coverage.out
+
+# Frontend dependencies and build output are ignored by frontend/.gitignore.
