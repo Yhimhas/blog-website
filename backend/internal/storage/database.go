@@ -28,5 +28,5 @@ func Ready(ctx context.Context, db *gorm.DB) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Check required tables as well as connectivity: an unmigrated database is not ready.
-	return db.WithContext(ctx).Exec("SELECT 1 FROM posts, sessions, music_sources, daily_recommendations LIMIT 0").Error
+	return db.WithContext(ctx).Exec("SELECT admin_users.role FROM posts, sessions, music_sources, daily_recommendations, admin_users LIMIT 0").Error
 }

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
-import { onBeforeRouteLeave, RouterLink } from 'vue-router'
+import { onBeforeRouteLeave, RouterLink, useRouter } from 'vue-router'
 import { ApiError, blogApi, type AdminPost, type PostInput, type Term } from '../blogApi'
 import { renderMarkdown } from '../markdown'
+import { authSession } from '../authSession'
 
 const checking = ref(true)
+const router = useRouter()
 const authenticated = ref(false)
-const username = ref('')
-const password = ref('')
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -33,8 +33,9 @@ function beforeUnload(event: BeforeUnloadEvent) {
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void restore() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 function handleError(e: unknown) {
-  if (e instanceof ApiError && (e.status === 401 || e.code === 'CSRF_FAILED')) {
+  if (e instanceof ApiError && (e.status === 401 || e.code === 'CSRF_FAILED' || e.code === 'ADMIN_REQUIRED')) {
     authenticated.value = false
+    authSession.user.value = null
     error.value = '会话已过期，请重新登录。当前编辑内容仍保留在此页面。'
   } else if (e instanceof ApiError && e.status === 409) {
     conflict.value = true
@@ -57,16 +58,9 @@ async function loadWorkspace() {
 }
 async function restore() {
   checking.value = true
-  try { await blogApi.session(); authenticated.value = true; await loadWorkspace() }
+  try { await authSession.restore(); authenticated.value = authSession.isAdmin.value; if (authenticated.value) await loadWorkspace() }
   catch (e) { if (!(e instanceof ApiError && e.status === 401)) handleError(e) }
   finally { checking.value = false }
-}
-async function login() {
-  await run(async () => {
-    try { await blogApi.login(username.value, password.value) } finally { password.value = '' }
-    authenticated.value = true
-    await loadWorkspace()
-  })
 }
 function fill(post?: AdminPost) {
   selected.value = post
@@ -114,24 +108,19 @@ async function save(publish = false) {
 async function changePage(value: number) { await run(async () => { page.value = value; await refreshList() }) }
 async function logout() {
   if (!allowedToLeave()) return
-  await run(async () => { await blogApi.logout(); authenticated.value = false; editing.value = false; selected.value = undefined; Object.assign(form, blank()); posts.value = [] })
+  await run(async () => { await authSession.logout(); authenticated.value = false; editing.value = false; selected.value = undefined; Object.assign(form, blank()); posts.value = [] })
+  if (!authenticated.value) await router.replace('/login')
 }
 </script>
 
 <template>
   <section class="admin-page content-section">
     <div class="section-header"><div><div class="eyebrow">OWNER / JOURNAL</div><h1 class="section-title">文章管理</h1></div><RouterLink to="/blog">查看公开博客 ↗</RouterLink></div>
-    <p><RouterLink to="/admin/local">打开本地草稿工作台 ↗</RouterLink></p>
+    <p v-if="authenticated"><RouterLink to="/admin/local">打开本地草稿工作台 ↗</RouterLink></p>
     <p v-if="checking" role="status">正在检查登录状态…</p>
     <p v-if="error" role="alert" class="admin-error">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <form v-if="!checking && !authenticated" class="admin-login" @submit.prevent="login">
-      <h2>站长登录</h2>
-      <label>用户名<input v-model="username" autocomplete="username" required :disabled="busy" /></label>
-      <label>密码<input v-model="password" type="password" autocomplete="current-password" required :disabled="busy" /></label>
-      <button :disabled="busy">{{ busy ? '登录中…' : '登录' }}</button>
-      <p>使用 Go 后端创建的站长账号。</p>
-    </form>
+    <p v-if="!checking && !authenticated"><RouterLink to="/login?next=/admin">前往用户登录</RouterLink></p>
     <template v-if="!checking && authenticated">
       <div class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
       <div class="admin-layout">

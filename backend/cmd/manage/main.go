@@ -27,7 +27,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: go run ./cmd/manage migrate|create-admin|import-music <file.json>")
+		return errors.New("usage: go run ./cmd/manage migrate|create-admin|create-user|import-music <file.json>")
 	}
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -88,9 +88,15 @@ func run() error {
 		}
 		fmt.Println("migrations applied")
 		return nil
-	case "create-admin":
+	case "create-admin", "create-user":
 		username, password := os.Getenv("ADMIN_USERNAME"), os.Getenv("ADMIN_PASSWORD")
 		os.Unsetenv("ADMIN_PASSWORD")
+		role := "admin"
+		if os.Args[1] == "create-user" {
+			role = "user"
+			username, password = os.Getenv("USER_USERNAME"), os.Getenv("USER_PASSWORD")
+			os.Unsetenv("USER_PASSWORD")
+		}
 		db, err := storage.Open(dsn)
 		if err != nil {
 			return err
@@ -99,10 +105,10 @@ func run() error {
 		defer pool.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := auth.CreateUser(ctx, db, username, password); err != nil {
-			return errors.New("admin creation failed: use a unique username (1–100 characters), a 12–72 byte password, and migrate first")
+		if err := auth.CreateAccount(ctx, db, username, password, role); err != nil {
+			return errors.New("account creation failed: use a unique username (1–100 characters), a 12–72 byte password, and migrate first")
 		}
-		fmt.Println("admin created")
+		fmt.Println(role + " account created")
 		return nil
 	default:
 		return errors.New("unknown command")

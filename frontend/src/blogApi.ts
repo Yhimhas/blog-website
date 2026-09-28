@@ -1,4 +1,5 @@
 export interface Term { id: string; slug: string; name: string }
+export interface SessionUser { id: string; username: string; role: 'user' | 'admin' }
 export interface PublicPost {
   id: string; slug: string; title: string; summary: string
   category: Term | null; tags: Term[]; publishedAt: string; updatedAt: string
@@ -49,16 +50,16 @@ export const blogApi = {
   post: async (slug: string, signal?: AbortSignal) => (await request<{ data: PostDetail }>(`/posts/${encodeURIComponent(slug)}`, 'GET', undefined, signal)).data,
   terms: async (kind: 'categories' | 'tags') => (await request<{ data: Term[] }>(`/${kind}`)).data,
   async session() {
-    const result = await request<{ data: { user: { username: string }; csrfToken: string } }>('/admin/session')
+    const result = await request<{ data: { user: SessionUser; csrfToken: string } }>('/session')
     csrf = result.data.csrfToken
     return result.data
   },
   async login(username: string, password: string) {
     csrf = ''
-    await request('/admin/session', 'POST', { username, password })
+    await request('/session', 'POST', { username, password })
     return this.session()
   },
-  async logout() { await request('/admin/session/logout', 'POST', {}); csrf = '' },
+  async logout() { await request('/session/logout', 'POST', {}); csrf = '' },
   adminPosts: (page: number) => request<Page<AdminPost>>(`/admin/posts?page=${page}&pageSize=20`),
   adminPost: async (id: string) => (await request<{ data: AdminPost }>(`/admin/posts/${encodeURIComponent(id)}`)).data,
   create: async (input: PostInput) => (await request<{ data: AdminPost }>('/admin/posts', 'POST', input)).data,

@@ -61,6 +61,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err = isolated.Exec(string(sql)).Error; err != nil {
 		t.Fatal(err)
 	}
+	roles, err := migrations.Files.ReadFile("000002_user_roles.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = isolated.Exec(string(roles)).Error; err != nil {
+		t.Fatal(err)
+	}
 	return isolated
 }
 func TestPostgresContracts(t *testing.T) {
