@@ -68,9 +68,25 @@ func OfficialURL(raw, kind string, embed bool) bool {
 		if embed {
 			return u.Host == "player.bilibili.com" && u.Path == "/player.html" && BVID.MatchString(u.Query().Get("bvid"))
 		}
-		return u.Host == "www.bilibili.com" && strings.HasPrefix(u.Path, "/video/")
+		return u.Host == "www.bilibili.com" && BVID.MatchString(strings.TrimSuffix(strings.TrimPrefix(u.Path, "/video/"), "/")) && strings.HasPrefix(u.Path, "/video/")
 	}
 	return false
+}
+
+// SourceURL validates a collection separately from a playable track URL.
+func SourceURL(raw, kind string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
+		return false
+	}
+	if kind == "netease" {
+		return u.Host == "music.163.com" && (u.Path == "/playlist" || u.Path == "/m/playlist") && Decimal.MatchString(u.Query().Get("id"))
+	}
+	if kind != "bilibili" || u.Host != "space.bilibili.com" {
+		return false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	return len(parts) == 2 && Decimal.MatchString(parts[0]) && parts[1] == "favlist" && Decimal.MatchString(u.Query().Get("fid"))
 }
 func Validate(items []Track, kind string) error {
 	if len(items) > 2000 {
@@ -86,6 +102,12 @@ func Validate(items []Track, kind string) error {
 		}
 		if kind == "bilibili" && (!BVID.MatchString(t.ExternalID) || t.PartID == nil || !Decimal.MatchString(*t.PartID) || t.ID != "bilibili:"+t.ExternalID+":"+*t.PartID) {
 			return InvalidPayload
+		}
+		if kind == "bilibili" {
+			u, _ := url.Parse(t.SourceURL)
+			if strings.Trim(u.Path, "/") != "video/"+t.ExternalID {
+				return InvalidPayload
+			}
 		}
 		if t.Author != nil && (!utf8.ValidString(*t.Author) || utf8.RuneCountInString(*t.Author) > 160 || strings.ContainsRune(*t.Author, 0)) {
 			return InvalidPayload

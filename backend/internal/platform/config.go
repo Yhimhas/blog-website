@@ -2,6 +2,7 @@ package platform
 
 import (
 	"errors"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 )
 
 type Config struct {
+	MediaAddr, YTDLP                  string
+	MusicPlayback                     bool
 	Addr, DatabaseURL, Origin, Env    string
 	SessionTTL                        time.Duration
 	SecureCookie, Demo, MusicAutoSync bool
@@ -39,6 +42,24 @@ func LoadConfig() (Config, error) {
 		}
 	}
 	c.SecureCookie = c.Env == "production"
+	c.MediaAddr = os.Getenv("MUSIC_MEDIA_ADDR")
+	if c.MediaAddr == "" {
+		c.MediaAddr = "127.0.0.1:8082"
+	}
+	host, _, addrErr := net.SplitHostPort(c.MediaAddr)
+	if addrErr != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
+		return c, errors.New("MUSIC_MEDIA_ADDR must use a loopback IP")
+	}
+	c.YTDLP = os.Getenv("MUSIC_YTDLP")
+	if c.YTDLP == "" {
+		c.YTDLP = "yt-dlp"
+	}
+	if v := os.Getenv("MUSIC_PLAYBACK_ENABLED"); v != "" {
+		c.MusicPlayback, err = strconv.ParseBool(v)
+		if err != nil {
+			return c, errors.New("MUSIC_PLAYBACK_ENABLED must be boolean")
+		}
+	}
 	if v := os.Getenv("COOKIE_SECURE"); v != "" {
 		c.SecureCookie, err = strconv.ParseBool(v)
 		if err != nil {

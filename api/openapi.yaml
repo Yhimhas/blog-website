@@ -2494,6 +2494,223 @@
           }
         }
       }
+    },
+    "/api/v1/music/playback-sessions": {
+      "post": {
+        "summary": "Create an anonymous cookie-bound Bilibili P1 audio session",
+        "description": "Same-origin Origin required. Limited to 10 creates per visitor/IP/minute, 2 resolvers and 128 retained sessions. Disabled by default.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "trackId"
+                ],
+                "properties": {
+                  "trackId": {
+                    "type": "string",
+                    "maxLength": 150
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Preparing; poll until ready. Set-Cookie music_playback (HttpOnly, SameSite=Strict).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlaybackSession"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "403": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "404": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "410": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "422": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "429": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "503": {
+            "description": "Safe error code in error/code with requestId"
+          }
+        }
+      }
+    },
+    "/api/v1/music/playback-sessions/{id}": {
+      "get": {
+        "summary": "Get cookie-bound playback state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session state; ready does not mean browser is playing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlaybackSession"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "403": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "404": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "410": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "422": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "429": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "503": {
+            "description": "Safe error code in error/code with requestId"
+          }
+        }
+      }
+    },
+    "/api/v1/music/playback-sessions/{id}/stop": {
+      "post": {
+        "summary": "Idempotently cancel resolver and stream; same-origin Origin required",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped or already removed"
+          },
+          "400": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "403": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "404": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "410": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "422": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "429": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "503": {
+            "description": "Safe error code in error/code with requestId"
+          }
+        }
+      }
+    },
+    "/api/v1/music/streams/{id}": {
+      "get": {
+        "summary": "Same-domain audio stream routed to media listener",
+        "description": "Cookie required. A full 200 stream; Range ignored, no seek or media persistence. At most 4 streams, one per session. After headers, failures abort the connection; poll state for errorCode.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AAC independent audio in MP4 container, no-store",
+            "content": {
+              "audio/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "403": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "404": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "409": {
+            "description": "Duplicate connection for a session (STREAM_CONFLICT). Stream capacity returns 429 PLAYBACK_BUSY."
+          },
+          "410": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "422": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "429": {
+            "description": "Safe error code in error/code with requestId"
+          },
+          "503": {
+            "description": "Safe error code in error/code with requestId"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3113,6 +3330,60 @@
           "requestId"
         ],
         "additionalProperties": false
+      },
+      "PlaybackSession": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "status",
+          "durationSeconds",
+          "seekMode",
+          "expiresAt",
+          "attribution"
+        ],
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "ready",
+              "streaming",
+              "ended",
+              "failed",
+              "stopped",
+              "expired"
+            ]
+          },
+          "streamUrl": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "nullable": true
+          },
+          "seekMode": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attribution": {
+            "type": "object"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        }
       }
     }
   }

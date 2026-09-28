@@ -68,6 +68,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err = isolated.Exec(string(roles)).Error; err != nil {
 		t.Fatal(err)
 	}
+	playbackSQL, err := migrations.Files.ReadFile("000003_music_playback.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = isolated.Exec(string(playbackSQL)).Error; err != nil {
+		t.Fatal(err)
+	}
 	return isolated
 }
 func TestPostgresContracts(t *testing.T) {
@@ -209,6 +216,19 @@ func TestPostgresContracts(t *testing.T) {
 	got, count, err = ms.Tracks(ctx, source.ID, 1, 20)
 	if err != nil || count != 1 || got[0].Title != "original" {
 		t.Fatal("partial snapshot committed")
+	}
+	if err := db.Exec("UPDATE music_items SET playback_checked_at=now() WHERE id='netease:123'").Error; err != nil {
+		t.Fatal(err)
+	}
+	fresh := append([]provider.Track{}, tracks...)
+	fresh[0].Availability = "unknown"
+	fresh[0].Title = "refreshed"
+	if err := music.Import(ctx, db, source, fresh); err != nil {
+		t.Fatal(err)
+	}
+	preserved, _, err := ms.Tracks(ctx, source.ID, 1, 20)
+	if err != nil || preserved[0].Availability != "available" {
+		t.Fatal("sync erased verified availability", err)
 	}
 	rec := recommendation.Service{DB: db}
 	now := time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
