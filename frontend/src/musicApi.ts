@@ -1,4 +1,9 @@
+import { mapTrack } from './musicLibraryApi.ts'
 export interface RecommendedTrack {
+  externalId?: string
+  partId?: string | null
+  durationSeconds?: number | null
+  availability?: 'unknown' | 'available' | 'unavailable'
   id: string
   title: string
   artist: string
@@ -36,7 +41,7 @@ export function parseRecommendations(payload: unknown): { date: string; items: R
     }
     seen.add(track.id)
     return {
-      id: track.id, title: track.title, artist: (track.author as string | null) || '未知作者',
+      ...mapTrack(track), id: track.id, title: track.title, artist: (track.author as string | null) || '未知作者',
       url: url.href, platform: track.provider,
       playlistId: (track.playlistId as string | undefined) || '',
     }

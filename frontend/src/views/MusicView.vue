@@ -2,9 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
-import { platformPlaylists } from "../musicSources";
+import { useMusicLibrary } from '../useMusicLibrary';
+import { useMusicPlayer } from '../useMusicPlayer';
+import { migrateFavoriteID, legacyFavorite, missingFavorite, readFavoriteSnapshots } from '../musicFavorites';
+import type { MusicTrack } from '../musicLibraryApi';
+const { playlists: platformPlaylists, status: libraryStatus, error: libraryError, reload: loadLibrary } = useMusicLibrary();
+const player = useMusicPlayer();
+const { state: playerState, message: playerMessage, currentTime, duration, volume } = player;
+function timeLabel(value: number) { return `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`; }
 import { shanghaiDate } from "../musicDaily";
-import { fetchTodayRecommendations, parseRecommendations, type RecommendedTrack } from "../musicApi";
+import { fetchTodayRecommendations } from "../musicApi";
 import { useMusicRecommendations } from "../useMusicRecommendations";
 import "../assets/music-atlus.css";
 
@@ -60,25 +67,15 @@ const selectedId = ref("");
 const favorites = ref<string[]>([]);
 const notice = ref("");
 const selectedPlaylistId = ref('');
-const neteasePlaylist = platformPlaylists.find(item => item.id === 'netease:595975585');
-const pendingPlaylist = computed(() => activeTab.value === 'library' && platform.value === 'netease' && neteasePlaylist?.syncStatus === 'pending');
+const neteasePlaylist = computed(() => platformPlaylists.value.find(item => item.id === 'netease:595975585'));
+const pendingPlaylist = computed(() => activeTab.value === 'library' && platform.value === 'netease' && !!neteasePlaylist.value && neteasePlaylist.value.syncStatus !== 'ready');
 const day = ref(shanghaiDate());
-const allTracks = platformPlaylists.flatMap((playlist) =>
-  playlist.tracks.map((track) => ({
-    ...track,
-    playlistId: playlist.id,
-    playlistTitle: playlist.title,
-    platform: playlist.platform,
-  })),
-);
-const localTracks = [
-  ...new Map(allTracks.map((track) => [track.id, track])).values(),
-];
-const savedRecommendedTracks = ref<RecommendedTrack[]>([]);
+const localTracks = computed(() => [...new Map(platformPlaylists.value.flatMap(p => p.tracks).map(t => [t.id,t])).values()]);
+const savedRecommendedTracks = ref<MusicTrack[]>([]);
 const { state: recommendationState, recommendations, recommendationDate, localFallback, reload: loadRecommendations } = useMusicRecommendations({
-  mode: import.meta.env.DEV && import.meta.env.VITE_MUSIC_RECOMMENDATIONS_SOURCE === 'local' ? 'local' : 'api',
+  mode: 'api',
   day,
-  localTracks,
+  localTracks: [],
   request: async signal => {
     const result = await fetchTodayRecommendations(signal);
     return { ...result, timezone: 'Asia/Shanghai' as const, items: result.items.map(track => ({ ...track, embedUrl: '' })) };
@@ -86,24 +83,24 @@ const { state: recommendationState, recommendations, recommendationDate, localFa
 });
 const recommendationLoading = computed(() => recommendationState.value.status === 'loading');
 const recommendationError = computed(() => recommendationState.value.status === 'error' ? recommendationState.value.message : '');
-const selectedTrack = ref<RecommendedTrack>();
-const uniqueTracks = computed(() => [...new Map(
-  [...localTracks, ...savedRecommendedTracks.value, ...recommendations.value].map(track => [track.id, track]),
+const selectedTrack = ref<MusicTrack>();
+const uniqueTracks = computed<MusicTrack[]>(() => [...new Map(
+  [...savedRecommendedTracks.value, ...recommendations.value, ...localTracks.value].map(track => [track.id, track]),
 ).values()]);
 const currentTrack = computed(
   () =>
-    selectedPlaylistId.value ? undefined : (selectedTrack.value || uniqueTracks.value.find((track) => track.id === selectedId.value) ||
+    selectedPlaylistId.value ? undefined : (player.track.value || selectedTrack.value || uniqueTracks.value.find((track) => track.id === selectedId.value) ||
     recommendations.value[0]),
 );
 const currentPlaylist = computed(() =>
-  platformPlaylists.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
+  platformPlaylists.value.find((item) => item.id === (selectedPlaylistId.value || currentTrack.value?.playlistId)),
 );
 const officialUrl = computed(() => currentTrack.value?.url || currentPlaylist.value?.url);
 const currentPlatform = computed(() => currentTrack.value?.platform || currentPlaylist.value?.platform);
 const platformName = computed(() => currentPlatform.value === 'bilibili' ? 'Bilibili' : '网易云音乐');
-const trackQueue = computed(() => currentTrack.value && recommendations.value.some(track => track.id === currentTrack.value?.id)
-  ? recommendations.value : currentPlaylist.value?.tracks || []);
+const trackQueue = player.queue;
 function openPlaylist(id: string) {
+  player.stop();
   selectedPlaylistId.value = id;
   selectedId.value = '';
   selectedTrack.value = undefined;
@@ -117,7 +114,7 @@ const showingDaily = computed(
   () => activeTab.value === "discover" && !searching.value,
 );
 const visibleTracks = computed(() => {
-  const source = showingDaily.value ? recommendations.value : uniqueTracks.value;
+  const source = showingDaily.value ? recommendations.value : activeTab.value === "favorites" ? uniqueTracks.value : localTracks.value;
   return source.filter(
     (track) =>
       (activeTab.value !== "favorites" || favorites.value.includes(track.id)) &&
@@ -185,32 +182,30 @@ function choose(id: string) {
   selectedPlaylistId.value = '';
   selectedId.value = id;
   selectedTrack.value = uniqueTracks.value.find(track => track.id === id);
+  if (selectedTrack.value) void player.play(selectedTrack.value, visibleTracks.value);
 }
-function stepTrack(direction: number) {
-  const queue = trackQueue.value;
-  if (queue.length < 2) return;
-  const index = queue.findIndex((track) => track.id === currentTrack.value?.id);
-  const track = queue[(index + direction + queue.length) % queue.length];
-  if (track) choose(track.id);
-}
+function stepTrack(direction: number) { player.step(direction); }
 function favorite(id: string) {
   favorites.value = favorites.value.includes(id)
     ? favorites.value.filter((item) => item !== id)
     : [...favorites.value, id];
   savedRecommendedTracks.value = [...new Map(
-    [...savedRecommendedTracks.value, ...recommendations.value]
+    [...savedRecommendedTracks.value, ...uniqueTracks.value]
       .filter(track => favorites.value.includes(track.id)).map(track => [track.id, track]),
   ).values()];
+  saveFavorites();
+}
+function saveFavorites() {
   try {
-    localStorage.setItem('lin-music-favorite-snapshots', JSON.stringify({ data: {
+    localStorage.setItem('lin-music-favorite-snapshots-v2', JSON.stringify({ data: {
       date: day.value, timezone: 'Asia/Shanghai', status: 'ready',
       items: savedRecommendedTracks.value.map(track => ({
         id: track.id, title: track.title, author: track.artist, provider: track.platform,
-        sourceUrl: track.url, playlistId: track.playlistId, availability: 'available',
+        sourceUrl: track.url, playlistId: track.playlistId, availability: track.availability || 'unknown', externalId: track.externalId, partId: track.partId, durationSeconds: track.durationSeconds,
       })),
     } }));
     localStorage.setItem(
-      "lin-music-favorites",
+      "lin-music-favorites-v2",
       JSON.stringify(favorites.value),
     );
   } catch {
@@ -238,19 +233,23 @@ function updateDay() {
 let dayTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   try {
-    const snapshots = localStorage.getItem('lin-music-favorite-snapshots');
-    if (snapshots) savedRecommendedTracks.value = parseRecommendations(JSON.parse(snapshots)).items;
+    const snapshots = (localStorage.getItem('lin-music-favorite-snapshots-v2') || localStorage.getItem('lin-music-favorite-snapshots'));
+    if (snapshots) savedRecommendedTracks.value = readFavoriteSnapshots(JSON.parse(snapshots));
   } catch {
     notice.value = '部分收藏曲目信息暂时无法读取。';
   }
   try {
     const saved: unknown = JSON.parse(
-      localStorage.getItem("lin-music-favorites") || "[]",
+      localStorage.getItem("lin-music-favorites-v2") || localStorage.getItem("lin-music-favorites") || "[]",
     );
     if (Array.isArray(saved))
       favorites.value = [
-        ...new Set(saved.filter((id): id is string => typeof id === "string")),
+        ...new Set(saved.filter((id): id is string => typeof id === "string").map(migrateFavoriteID)),
       ];
+    if (Array.isArray(saved)) {
+      for (const id of saved) { if (typeof id !== 'string') continue; const t = legacyFavorite(id) || missingFavorite(migrateFavoriteID(id)); if (!savedRecommendedTracks.value.some(x => x.id === t.id)) savedRecommendedTracks.value.push(t); }
+      saveFavorites();
+    }
     const choices: unknown = JSON.parse(
       localStorage.getItem("yhimhas:music-backgrounds:v1") || "{}",
     );
@@ -439,7 +438,7 @@ onBeforeUnmount(() => {
                 :key="track.id"
                 :class="[
                   'music-track',
-                  { 'is-selected': selectedId === track.id },
+                  { 'is-selected': player.track.value?.id === track.id },
                 ]"
               >
                 <button
@@ -477,7 +476,9 @@ onBeforeUnmount(() => {
                   <MusicIcon name="heart" />
                 </button>
               </article>
-              <div v-if="!visibleTracks.length" class="music-empty">
+              <div v-if="!showingDaily && libraryStatus === 'loading'" class="music-empty">正在加载音乐库…</div>
+              <div v-if="!showingDaily && libraryError" class="music-empty"><p>{{ libraryError }}</p><button @click="loadLibrary">重新加载</button></div>
+              <div v-if="!visibleTracks.length && (showingDaily || (libraryStatus !== 'loading' && !libraryError))" class="music-empty">
                 <span aria-hidden="true">{{
                   activeTab === "favorites" ? "♡" : "↗"
                 }}</span>
@@ -494,7 +495,7 @@ onBeforeUnmount(() => {
                 </h3>
                 <p>
                   {{
-                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : pendingPlaylist ? '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。' : searching
+                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : pendingPlaylist ? (neteasePlaylist?.syncStatus === 'failed' ? '歌单同步失败，请稍后重试或前往原站。' : '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。') : searching
                       ? "换一个歌名或作者试试。"
                       : activeTab === "favorites"
                         ? "点击曲目旁的爱心，就能在这里再次遇见。"
@@ -552,6 +553,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="music-player-controls">
+          <button :disabled="!currentTrack || playerState === 'preparing'" @click="player.track.value ? player.toggle() : currentTrack && choose(currentTrack.id)">{{ playerState === 'playing' || playerState === 'buffering' ? '暂停' : playerState === 'blocked' ? '继续播放' : '播放' }}</button>
+          <button :disabled="!player.track.value" @click="player.stop">停止</button>
+          <button v-if="playerState === 'error' && player.track.value" @click="player.play(player.track.value, player.queue.value)">重新播放</button>
           <button
             :disabled="!currentTrack"
             class="music-favorite"
@@ -592,8 +596,13 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+      <div class="music-playback-progress">
+        <span>{{ timeLabel(currentTime) }} / {{ duration ? timeLabel(duration) : '--:--' }}</span>
+        <progress :value="currentTime" :max="duration || 1" aria-label="播放进度（暂不支持拖动）" />
+        <label>音量 <input type="range" min="0" max="1" step="0.05" :value="volume" @input="player.setVolume(Number(($event.target as HTMLInputElement).value))" /></label>
+      </div>
       <p id="music-playback-status" class="music-player-status">
-        站内纯音频播放尚未接入，请在官方页面播放。上一首／下一首仅切换所选曲目；播放、暂停、进度和音量请在官方页面控制。
+        {{ playerMessage }}
       </p>
     </section>
     <p v-if="notice" class="music-notice" role="status">{{ notice }}</p>

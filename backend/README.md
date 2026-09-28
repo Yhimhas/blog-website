@@ -195,3 +195,16 @@ go vet ./...
 以上接口与测试说明仅针对保留的 B01 演示。当前正式后端已实现数据库、认证、Gin、ready、分类/标签、音乐 API 和 OpenAPI；前端联调仍待完成，详细状态以本文上方为准。
 
 旧开发下载包与缓存保留在 `D:\blog-website\.tools\`，不属于 Git 仓库；其中 zip 和 Go 1.26.7 便携工具链为历史遗留，当前 Go 1.27.1 不依赖它们。本次没有删除这些文件，也没有生成新的试验产物。
+
+## 站内音乐播放
+
+实现、实测结果、部署步骤及未完成验收见 [music 播放交付记录](../docs/music-playback-validation.md)。默认 `MUSIC_PLAYBACK_ENABLED=false`。启用后同一进程增加回环媒体监听 8082；反向代理须优先将 `/api/v1/music/streams/` 路由至该监听。
+
+导入本地 Bilibili 快照（先迁移，默认拒绝空列表和含歧义的非 P1 旧数据）：
+
+```sh
+go run ./cmd/manage migrate
+go run ./cmd/manage import-bilibili ../frontend/src/data/bilibili-playlist.json
+```
+
+导入只保存元数据，availability 为 unknown；实际媒体校验成功后才标记 available。不修改当天已保存的推荐。

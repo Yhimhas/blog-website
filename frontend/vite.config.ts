@@ -20,6 +20,7 @@ export default defineConfig({
   server: {
     // Keep the browser same-origin while forwarding API calls to the Go service.
     proxy: {
+      '/api/v1/music/streams': { target: 'http://127.0.0.1:8082', changeOrigin: false, timeout: 0, proxyTimeout: 0 },
       '/api': { target: 'http://127.0.0.1:8081', changeOrigin: false },
     },
   },

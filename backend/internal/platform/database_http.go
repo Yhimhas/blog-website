@@ -4,6 +4,7 @@ import (
 	"blog-website/backend/internal/auth"
 	"blog-website/backend/internal/blog"
 	"blog-website/backend/internal/music"
+	"blog-website/backend/internal/music/playback"
 	"blog-website/backend/internal/music/provider"
 	"blog-website/backend/internal/recommendation"
 	"blog-website/backend/internal/storage"
@@ -35,7 +36,7 @@ type databaseAPI struct {
 	loginLimit, syncLimit auth.Limiter
 }
 
-func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.Service) http.Handler {
+func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.Service, players ...*playback.Service) http.Handler {
 	a := &databaseAPI{db: db, config: cfg, posts: blog.Repository{DB: db}, auth: auth.Service{DB: db, TTL: cfg.SessionTTL}, music: m, recommendation: recommendation.Service{DB: db}, loginLimit: auth.Limiter{Limit: 10, Window: time.Minute}, syncLimit: auth.Limiter{Limit: 4, Window: time.Minute}}
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
@@ -55,9 +56,15 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		defer func() {
 			if recover() != nil {
 				c.Abort()
-				apiFail(c, 500, "INTERNAL_ERROR", "内部错误")
+				if !c.Writer.Written() {
+					apiFail(c, 500, "INTERNAL_ERROR", "内部错误")
+				}
 			}
-			logger.Info("http request", "requestId", id, "method", c.Request.Method, "path", c.Request.URL.Path, "status", c.Writer.Status())
+			path := c.Request.URL.Path
+			if strings.HasPrefix(path, "/api/v1/music/playback-sessions/") {
+				path = "/api/v1/music/playback-sessions/:id"
+			}
+			logger.Info("http request", "requestId", id, "method", c.Request.Method, "path", path, "status", c.Writer.Status())
 		}()
 		c.Next()
 	})
@@ -86,6 +93,11 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		apiFail(c, 405, "METHOD_NOT_ALLOWED", "请求方法不支持")
 	})
 	v := router.Group("/api/v1")
+	var player *playback.Service
+	if len(players) > 0 {
+		player = players[0]
+	}
+	bindPlayback(v, player, cfg)
 	v.GET("/health", func(c *gin.Context) { data(c, 200, gin.H{"status": "ok"}) })
 	v.GET("/ready", func(c *gin.Context) {
 		if storage.Ready(c.Request.Context(), db) != nil {

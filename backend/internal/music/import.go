@@ -14,7 +14,7 @@ import (
 // Import is a local administration path for verified/manual platform metadata.
 // It never fetches a URL and never edits an existing daily recommendation.
 func Import(ctx context.Context, db *gorm.DB, source Source, items []provider.Track) error {
-	if source.ID == "" || len(source.ID) > 150 || source.ExternalID == "" || strings.TrimSpace(source.Title) == "" || utf8.RuneCountInString(source.Title) > 160 || !provider.OfficialURL(source.SourceURL, source.Provider, false) || (source.EmbedURL != nil && !provider.OfficialURL(*source.EmbedURL, source.Provider, true)) {
+	if source.ID == "" || len(source.ID) > 150 || source.ExternalID == "" || strings.TrimSpace(source.Title) == "" || utf8.RuneCountInString(source.Title) > 160 || !provider.SourceURL(source.SourceURL, source.Provider) || (source.EmbedURL != nil && !provider.OfficialURL(*source.EmbedURL, source.Provider, true)) {
 		return provider.InvalidSource
 	}
 	if source.Provider == "netease" && (!provider.Decimal.MatchString(source.ExternalID) || source.ID != "netease:"+source.ExternalID) {

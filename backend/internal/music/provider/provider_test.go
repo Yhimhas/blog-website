@@ -12,3 +12,17 @@ func TestOfficialURL(t *testing.T) {
 		t.Fatal("official embed rejected")
 	}
 }
+func TestCollectionAndTrackSeparation(t *testing.T) {
+	fav := "https://space.bilibili.com/292715089/favlist?fid=3549762089"
+	if !SourceURL(fav, "bilibili") || OfficialURL(fav, "bilibili", false) {
+		t.Fatal("collection boundary")
+	}
+	for _, s := range []string{"https://space.bilibili.com/a/favlist?fid=1", "https://space.bilibili.com/1/favlist?fid=bad", "https://space.bilibili.com.evil/1/favlist?fid=1"} {
+		if SourceURL(s, "bilibili") {
+			t.Fatal(s)
+		}
+	}
+	if OfficialURL("https://www.bilibili.com/video/not-a-bvid", "bilibili", false) {
+		t.Fatal("invalid BVID")
+	}
+}

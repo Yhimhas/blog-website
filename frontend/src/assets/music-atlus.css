@@ -247,3 +247,8 @@
   .music-track-list:not(.is-daily) { height: 340px; max-height: 340px; }
   .music-masthead { min-height: 59px; }
 }
+.music-playback-progress { display:flex; align-items:center; gap:16px; padding:10px 24px; font-size:12px; }
+.music-playback-progress progress { flex:1; min-width:30px; height:5px; accent-color:#222; }
+.music-playback-progress label { display:flex; align-items:center; gap:8px; }
+.music-playback-progress input { width:80px; accent-color:#222; }
+@media(max-width:700px) { .music-player-controls { flex-wrap:wrap; } .music-playback-progress { padding:8px 12px; gap:8px; } }

@@ -68,7 +68,7 @@ func (s *Service) Playlists(ctx context.Context) ([]Source, error) {
 		return nil, err
 	}
 	for _, v := range out {
-		if !provider.OfficialURL(v.SourceURL, v.Provider, false) || (v.EmbedURL != nil && !provider.OfficialURL(*v.EmbedURL, v.Provider, true)) {
+		if !provider.SourceURL(v.SourceURL, v.Provider) || (v.EmbedURL != nil && !provider.OfficialURL(*v.EmbedURL, v.Provider, true)) {
 			return nil, provider.InvalidSource
 		}
 	}
@@ -282,7 +282,7 @@ func (s *Service) ReplaceSnapshot(ctx context.Context, source Source, run Run, i
 				if t.PartID != nil {
 					part = *t.PartID
 				}
-				if err := tx.Exec(`INSERT INTO music_items(id,provider,external_id,part_key,title,author,source_url,duration_seconds,availability,embed_url) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,author=EXCLUDED.author,source_url=EXCLUDED.source_url,duration_seconds=EXCLUDED.duration_seconds,availability=EXCLUDED.availability,embed_url=EXCLUDED.embed_url,updated_at=now()`, t.ID, t.Provider, t.ExternalID, part, t.Title, t.Author, t.SourceURL, t.DurationSeconds, t.Availability, t.EmbedURL).Error; err != nil {
+				if err := tx.Exec(`INSERT INTO music_items(id,provider,external_id,part_key,title,author,source_url,duration_seconds,availability,embed_url) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,author=EXCLUDED.author,source_url=EXCLUDED.source_url,duration_seconds=EXCLUDED.duration_seconds,availability=CASE WHEN music_items.playback_checked_at IS NOT NULL AND EXCLUDED.availability='unknown' THEN music_items.availability ELSE EXCLUDED.availability END,embed_url=EXCLUDED.embed_url,updated_at=now()`, t.ID, t.Provider, t.ExternalID, part, t.Title, t.Author, t.SourceURL, t.DurationSeconds, t.Availability, t.EmbedURL).Error; err != nil {
 					return err
 				}
 				if err := tx.Exec(`INSERT INTO source_items(source_id,item_id,position) VALUES (?,?,?) ON CONFLICT(source_id,item_id) DO UPDATE SET position=EXCLUDED.position,active=true,last_seen=now()`, source.ID, t.ID, i).Error; err != nil {

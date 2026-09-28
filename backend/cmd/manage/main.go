@@ -34,6 +34,39 @@ func run() error {
 		return errors.New("DATABASE_URL is required")
 	}
 	switch os.Args[1] {
+	case "import-bilibili":
+		if len(os.Args) != 3 {
+			return errors.New("import-bilibili requires snapshot JSON")
+		}
+		file, err := os.Open(os.Args[2])
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		source, items, err := music.DecodeBilibiliSnapshot(file)
+		if err != nil {
+			return err
+		}
+		db, err := storage.Open(dsn)
+		if err != nil {
+			return err
+		}
+		pool, _ := db.DB()
+		defer pool.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		var ambiguous int64
+		if err := db.WithContext(ctx).Table("music_items").Where("provider='bilibili' AND part_key <> '1'").Count(&ambiguous).Error; err != nil {
+			return err
+		}
+		if ambiguous > 0 {
+			return errors.New("existing non-P1 IDs require manual mapping before import")
+		}
+		if err := music.Import(ctx, db, source, items); err != nil {
+			return err
+		}
+		fmt.Printf("imported source=%s tracks=%d availability=unknown\n", source.ID, len(items))
+		return nil
 	case "import-music":
 		if len(os.Args) != 3 {
 			return errors.New("import-music requires a JSON file")
