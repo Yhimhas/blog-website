@@ -48,7 +48,7 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		c.Set("requestId", id)
 		c.Header("X-Request-ID", id)
 		c.Header("X-Content-Type-Options", "nosniff")
-		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/admin") {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/admin") || strings.HasPrefix(c.Request.URL.Path, "/api/v1/session") {
 			c.Header("Cache-Control", "no-store")
 			c.Header("X-Robots-Tag", "noindex")
 		}
@@ -131,18 +131,21 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 	})
 	v.GET("/music/recommendations/today", func(c *gin.Context) { a.daily(c, true) })
 	v.GET("/music/recommendations", func(c *gin.Context) { a.daily(c, false) })
-	v.POST("/admin/session", a.login)
-	admin := v.Group("/admin", a.requireSession)
-	admin.GET("/session", func(c *gin.Context) {
-		data(c, 200, gin.H{"user": c.MustGet("user"), "csrfToken": auth.CSRF(c.GetString("sessionToken"))})
-	})
-	admin.POST("/session/logout", a.requireWrite, func(c *gin.Context) {
-		if handleError(c, a.auth.Logout(c.Request.Context(), c.GetString("sessionToken")), "NOT_FOUND") {
-			return
-		}
-		a.cookie(c, "", -1)
-		c.Status(204)
-	})
+	// Keep legacy session URLs for existing clients; account sessions are role-neutral.
+	for _, path := range []string{"/session", "/admin/session"} {
+		v.POST(path, a.login)
+		v.GET(path, a.requireSession, func(c *gin.Context) {
+			data(c, 200, gin.H{"user": c.MustGet("user"), "csrfToken": auth.CSRF(c.GetString("sessionToken"))})
+		})
+		v.POST(path+"/logout", a.requireSession, a.requireWrite, func(c *gin.Context) {
+			if handleError(c, a.auth.Logout(c.Request.Context(), c.GetString("sessionToken")), "NOT_FOUND") {
+				return
+			}
+			a.cookie(c, "", -1)
+			c.Status(204)
+		})
+	}
+	admin := v.Group("/admin", a.requireSession, a.requireAdmin)
 	admin.GET("/posts", func(c *gin.Context) {
 		f, q, ok := readFilter(c)
 		if !ok {
@@ -353,6 +356,15 @@ func (a *databaseAPI) requireWrite(c *gin.Context) {
 	}
 	if !auth.CheckCSRF(c.GetString("sessionToken"), c.GetHeader("X-CSRF-Token")) {
 		apiFail(c, 403, "CSRF_FAILED", "CSRF 校验失败")
+		return
+	}
+	c.Next()
+}
+
+func (a *databaseAPI) requireAdmin(c *gin.Context) {
+	user, ok := c.MustGet("user").(auth.User)
+	if !ok || user.Role != "admin" {
+		apiFail(c, 403, "ADMIN_REQUIRED", "需要管理员权限")
 		return
 	}
 	c.Next()

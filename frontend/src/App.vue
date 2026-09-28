@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SiteIcon from "./components/SiteIcon.vue";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { authSession } from "./authSession";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { FieldProvider } from "@field-lab/vue";
 
@@ -51,13 +52,15 @@ function dismissNavigation() {
 }
 
 const content = ref<HTMLElement>();
-const nav = [
+onMounted(() => { void authSession.restore().catch(() => {}); });
+const nav = computed(() => [
   { path: "/", label: "首页", symbol: "⌂" },
   { path: "/blog", label: "博客", symbol: "layers" },
   { path: "/music", label: "音乐", symbol: "wave" },
   { path: "/about", label: "关于", symbol: "sparkle" },
-  { path: "/admin", label: "管理后台", symbol: "layers" },
-];
+  { path: "/login", label: authSession.user.value ? "我的账号" : "用户登录", symbol: "sparkle" },
+  ...(authSession.isAdmin.value ? [{ path: "/admin", label: "文章管理", symbol: "layers" }] : []),
+]);
 const active = computed(() =>
   route.path.startsWith("/blog") ? "/blog" : route.path.startsWith("/admin") ? "/admin" : route.path,
 );

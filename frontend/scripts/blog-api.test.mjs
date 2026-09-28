@@ -9,13 +9,13 @@ test('login → CSRF session → create → edit → publish → public slug use
   const edited = { ...draft, version: 2, contentMarkdown: '# 发布内容' }
   const published = { ...edited, version: 3, status: 'published' }
   const calls = [
-    ['/admin/session', 'POST', { username: 'owner', password: 'test-only-password' }, { user: { username: 'owner' } }],
-    ['/admin/session', 'GET', undefined, { user: { username: 'owner' }, csrfToken: 'csrf-test' }],
+    ['/session', 'POST', { username: 'owner', password: 'test-only-password' }, { user: { id: 'owner-id', username: 'owner', role: 'admin' } }],
+    ['/session', 'GET', undefined, { user: { id: 'owner-id', username: 'owner', role: 'admin' }, csrfToken: 'csrf-test' }],
     ['/admin/posts', 'POST', input, draft],
     ['/admin/posts/database-id', 'PATCH', { title: input.title, summary: input.summary, contentMarkdown: edited.contentMarkdown, categoryId: null, tagIds: [], version: 1 }, edited],
     ['/admin/posts/database-id/publish', 'POST', { version: 2 }, published],
     ['/posts/hello-go', 'GET', undefined, { slug: input.slug, title: input.title, contentMarkdown: edited.contentMarkdown }],
-    ['/admin/session/logout', 'POST', {}, undefined],
+    ['/session/logout', 'POST', {}, undefined],
   ]
   let index = 0
   t.mock.method(globalThis, 'fetch', async (url, options) => {
@@ -30,7 +30,7 @@ test('login → CSRF session → create → edit → publish → public slug use
     index++
     return data === undefined ? new Response(null, { status: 204 }) : Response.json({ data })
   })
-  await blogApi.login('owner', 'test-only-password')
+  assert.equal((await blogApi.login('owner', 'test-only-password')).user.role, 'admin')
   const created = await blogApi.create(input)
   const { slug, ...patch } = { ...input, contentMarkdown: edited.contentMarkdown }
   const updated = await blogApi.update(created.id, created.version, patch)

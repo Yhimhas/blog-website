@@ -20,6 +20,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 type User struct {
 	ID           string    `json:"id"`
 	Username     string    `json:"username"`
+	Role         string    `json:"role"`
 	PasswordHash string    `json:"-"`
 	CreatedAt    time.Time `json:"-"`
 }
@@ -48,6 +49,13 @@ func CheckCSRF(token, provided string) bool {
 }
 
 func CreateUser(ctx context.Context, db *gorm.DB, username, password string) error {
+	return CreateAccount(ctx, db, username, password, "user")
+}
+
+func CreateAccount(ctx context.Context, db *gorm.DB, username, password, role string) error {
+	if role != "user" && role != "admin" {
+		return errors.New("invalid account role")
+	}
 	if strings.TrimSpace(username) == "" || !utf8.ValidString(username) || utf8.RuneCountInString(username) > 100 || len(password) < 12 || len(password) > 72 {
 		return errors.New("username must be 1–100 characters; password must be 12–72 bytes")
 	}
@@ -55,7 +63,7 @@ func CreateUser(ctx context.Context, db *gorm.DB, username, password string) err
 	if err != nil {
 		return err
 	}
-	return db.WithContext(ctx).Create(&User{ID: Token(), Username: username, PasswordHash: string(hash), CreatedAt: time.Now().UTC()}).Error
+	return db.WithContext(ctx).Create(&User{ID: Token(), Username: username, Role: role, PasswordHash: string(hash), CreatedAt: time.Now().UTC()}).Error
 }
 
 // Fixed cost dummy hash keeps unknown users on the same password-check path.
@@ -85,7 +93,7 @@ func (s Service) Current(ctx context.Context, token string) (User, error) {
 		return User{}, ErrUnauthorized
 	}
 	var user User
-	err := s.DB.WithContext(ctx).Table("admin_users u").Select("u.id,u.username").Joins("JOIN sessions s ON s.admin_id=u.id").Where("s.token_hash=? AND s.expires_at>?", Hash(token), time.Now().UTC()).Take(&user).Error
+	err := s.DB.WithContext(ctx).Table("admin_users u").Select("u.id,u.username,u.role").Joins("JOIN sessions s ON s.admin_id=u.id").Where("s.token_hash=? AND s.expires_at>?", Hash(token), time.Now().UTC()).Take(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = ErrUnauthorized
 	}

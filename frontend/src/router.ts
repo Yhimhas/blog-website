@@ -5,10 +5,12 @@ import MusicView from './views/MusicView.vue'
 import ArticleView from './views/ArticleView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import { waitForPage } from './pageTransition'
+import { authSession } from './authSession'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    { path: '/login', component: () => import('./views/LoginView.vue'), meta: { title: '用户登录' } },
     { path: '/', component: HomeView, meta: { title: '首页' } },
     { path: '/blog', component: BlogView, meta: { title: '博客' } },
     { path: '/blog/:id', component: ArticleView, props: true, meta: { title: '文章' } },
@@ -25,4 +27,11 @@ export const router = createRouter({
     if (router.currentRoute.value.fullPath !== to.fullPath) return false
     return savedPosition ? { ...savedPosition, behavior: 'instant' } : { top: 0, behavior: 'instant' }
   },
+})
+
+router.beforeEach(async (to) => {
+  if (to.path === '/admin' || to.path.startsWith('/admin/')) {
+    try { await authSession.restore() } catch { return { path: '/login', query: { next: to.path } } }
+    if (!authSession.isAdmin.value) return { path: '/login', query: { next: to.path } }
+  }
 })
