@@ -180,7 +180,7 @@ func (r Repository) Create(ctx context.Context, p Record) (Record, error) {
 	p.Status = "draft"
 	p.Version = 1
 	p.PublishedAt = nil
-	p.CreatedAt = time.Now().UTC()
+	p.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
 	p.UpdatedAt = p.CreatedAt
 	err := r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&p).Error; err != nil {
@@ -250,7 +250,8 @@ func (r Repository) Change(ctx context.Context, id string, version int64, action
 			}
 			p.Status = "published"
 			if p.PublishedAt == nil {
-				now := time.Now().UTC()
+				// Match PostgreSQL timestamp precision so the returned value survives a round trip.
+				now := time.Now().UTC().Truncate(time.Microsecond)
 				p.PublishedAt = &now
 			}
 		case "archive":
@@ -259,7 +260,7 @@ func (r Repository) Change(ctx context.Context, id string, version int64, action
 			return ErrInvalid
 		}
 		p.Version++
-		p.UpdatedAt = time.Now().UTC()
+		p.UpdatedAt = time.Now().UTC().Truncate(time.Microsecond)
 		if err := tx.Save(&p).Error; err != nil {
 			return err
 		}
