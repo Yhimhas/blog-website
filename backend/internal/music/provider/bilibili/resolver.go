@@ -49,20 +49,44 @@ func (r Resolver) Resolve(ctx context.Context, t provider.Track) (playback.Audio
 	if out.overflow {
 		return playback.Audio{}, playback.Unsupported
 	}
+	return parseAudio(out.data)
+}
+func parseAudio(data []byte) (playback.Audio, error) {
 	var v struct {
 		URL, Ext, Vcodec, Acodec string
 		Duration                 float64
 		HTTPHeaders              map[string]string `json:"http_headers"`
 	}
-	if json.Unmarshal(out.data, &v) != nil || v.Vcodec != "none" || v.Ext != "m4a" || !strings.HasPrefix(v.Acodec, "mp4a") || !playback.MediaURL(v.URL) {
+	if json.Unmarshal(data, &v) != nil || v.Vcodec != "none" || v.Acodec == "none" || v.Acodec == "" || !playback.MediaURL(v.URL) {
 		return playback.Audio{}, playback.Unsupported
 	}
+	format := ""
+	switch v.Ext {
+	case "m4a", "mp4":
+		format = "mov"
+	case "mp3":
+		format = "mp3"
+	case "ogg", "opus":
+		format = "ogg"
+	case "flac":
+		format = "flac"
+	case "wav":
+		format = "wav"
+	case "webm":
+		format = "matroska"
+	case "aac":
+		format = "aac"
+	}
+	if format == "" {
+		return playback.Audio{}, playback.Unsupported
+	}
+	transcode := format != "mp3" && !(format == "mov" && strings.HasPrefix(v.Acodec, "mp4a"))
 	var duration *int
 	if v.Duration > 0 {
 		d := int(v.Duration)
 		duration = &d
 	}
-	return playback.Audio{URL: v.URL, MIME: "audio/mp4", Headers: v.HTTPHeaders, Duration: duration}, nil
+	return playback.Audio{URL: v.URL, MIME: playback.FormatMIME(format), InputFormat: format, Transcode: transcode, Headers: v.HTTPHeaders, Duration: duration}, nil
 }
 
 var _ io.Writer = (*bounded)(nil)

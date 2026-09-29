@@ -18,7 +18,7 @@ func playbackStatus(e playback.Failure) int {
 	switch e {
 	case playback.NotFound:
 		return 404
-	case playback.Unsupported:
+	case playback.Unsupported, playback.SourceUnavailable:
 		return 422
 	case playback.Busy, playback.RateLimited:
 		return 429

@@ -2,6 +2,8 @@
 
 日期：2026-09-28。状态：核心代码已实现，真实播放验收受服务器暂时断网阻塞；**尚未达到原计划的上线完成条件**。本文承接 [实施计划](music-playback-implementation-plan.md)。原计划保留。
 
+2026-09-29 更新：网易云音源与 FFmpeg 后续实现见 [网易云与转码验收](music-netease-transcode-validation.md)。下文保留 2026-09-28 首版验收结果。
+
 ## 已实现
 
 - Bilibili 收藏夹 SourceURL 与视频 Track URL 分开校验；P1 canonical ID 与快照整体校验；`manage import-bilibili` 可重复运行，默认拒绝空列表，发现旧非 P1 数据先要求映射。

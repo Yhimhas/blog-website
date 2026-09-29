@@ -129,3 +129,43 @@ func TestFourStreamLimit(t *testing.T) {
 		}
 	}
 }
+
+type brokenBody struct{ sent bool }
+
+func (b *brokenBody) Read(p []byte) (int, error) {
+	if b.sent {
+		return 0, io.ErrUnexpectedEOF
+	}
+	b.sent = true
+	return copy(p, []byte("\x00\x00\x00\x18ftypisom")), nil
+}
+func (b *brokenBody) Close() error { return nil }
+func TestMidStreamFailureAbortsConnection(t *testing.T) {
+	s := New(context.Background(), fakeResolver{}, fakeStore{})
+	defer s.Close()
+	s.client = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"audio/mp4"}}, Body: &brokenBody{}}, nil
+	})}
+	v, err := s.Create(context.Background(), "a", "a", "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready(t, s, v.ID, "a")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Stream(w, r, v.ID, "a", func(code int, f Failure) { http.Error(w, string(f), code) })
+	}))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err == nil || len(b) != 12 || string(b[4:8]) != "ftyp" {
+		t.Fatal("late error became a clean EOF or appended error data", err, len(b))
+	}
+	final, _ := s.Get(v.ID, "a")
+	if final.Status != "failed" {
+		t.Fatal(final.Status)
+	}
+}

@@ -58,7 +58,10 @@ func run(logger *slog.Logger) error {
 			if _, err := exec.LookPath(cfg.YTDLP); err != nil {
 				return errors.New("MUSIC_YTDLP executable unavailable")
 			}
-			player = playback.New(ctx, bilibili.Resolver{Binary: cfg.YTDLP}, musicService)
+			if _, err := exec.LookPath(cfg.FFmpeg); err != nil {
+				return errors.New("MUSIC_FFMPEG executable unavailable")
+			}
+			player = playback.New(ctx, playback.Resolvers{"bilibili": bilibili.Resolver{Binary: cfg.YTDLP}, "netease": netease.NewAudioResolver()}, musicService, playback.Options{FFmpeg: cfg.FFmpeg, ForceTranscode: cfg.MusicForceTranscode})
 			defer player.Close()
 			media = &http.Server{Addr: cfg.MediaAddr, Handler: platform.NewMusicStreamHandler(player, cfg), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 			mediaListener, err = net.Listen("tcp", cfg.MediaAddr)

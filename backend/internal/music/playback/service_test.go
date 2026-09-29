@@ -139,3 +139,25 @@ func TestOfficialCDNPorts(t *testing.T) {
 		}
 	}
 }
+
+type neteaseStore struct{ fakeStore }
+
+func (neteaseStore) Find(context.Context, string) (provider.Track, error) {
+	return provider.Track{ID: "netease:123", ExternalID: "123", Provider: "netease"}, nil
+}
+func TestNetEaseRoutingAndForceTranscode(t *testing.T) {
+	s := New(context.Background(), Resolvers{"netease": fakeResolver{}}, neteaseStore{}, Options{FFmpeg: "configured-ffmpeg", ForceTranscode: true})
+	defer s.Close()
+	v, e := s.Create(context.Background(), "n", "n", "netease:123")
+	if e != nil {
+		t.Fatal(e)
+	}
+	ready(t, s, v.ID, "n")
+	v, e = s.Get(v.ID, "n")
+	if e != nil || v.MIME != "audio/mpeg" || v.Attribution.Provider != "netease" {
+		t.Fatal(v, e)
+	}
+	if _, e := (Resolvers{}).Resolve(context.Background(), provider.Track{Provider: "other"}); e != Unsupported {
+		t.Fatal(e)
+	}
+}

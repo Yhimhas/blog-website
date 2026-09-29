@@ -2497,8 +2497,8 @@
     },
     "/api/v1/music/playback-sessions": {
       "post": {
-        "summary": "Create an anonymous cookie-bound Bilibili P1 audio session",
-        "description": "Same-origin Origin required. Limited to 10 creates per visitor/IP/minute, 2 resolvers and 128 retained sessions. Disabled by default.",
+        "summary": "Create an anonymous cookie-bound Bilibili P1 or NetEase audio session",
+        "description": "Same-origin Origin required. Library track IDs only. NetEase uses the official public outer link without account cookies; an upstream denial is not playable. Limited to 10 creates per visitor/IP/minute, 2 resolvers, 2 FFmpeg workers and 128 retained sessions. Disabled by default.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2551,7 +2551,7 @@
             "description": "Safe error code in error/code with requestId"
           },
           "422": {
-            "description": "Safe error code in error/code with requestId"
+            "description": "PLAYBACK_UNSUPPORTED or AUDIO_SOURCE_UNAVAILABLE; keep original platform link."
           },
           "429": {
             "description": "Safe error code in error/code with requestId"
@@ -2675,9 +2675,15 @@
         ],
         "responses": {
           "200": {
-            "description": "AAC independent audio in MP4 container, no-store",
+            "description": "AAC/MP4 or MP3 passthrough; incompatible supported audio containers are converted to 128 kbps MP3 through a pipe. No-store and no seek.",
             "content": {
               "audio/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
                 "schema": {
                   "type": "string",
                   "format": "binary"
@@ -2707,7 +2713,7 @@
             "description": "Safe error code in error/code with requestId"
           },
           "503": {
-            "description": "Safe error code in error/code with requestId"
+            "description": "UPSTREAM_UNAVAILABLE, PLAYBACK_TIMEOUT, TRANSCODE_UNAVAILABLE or TRANSCODE_FAILED before media bytes; after response starts the connection ends and session state reports the error."
           }
         }
       }
@@ -3381,7 +3387,8 @@
             "type": "object"
           },
           "errorCode": {
-            "type": "string"
+            "type": "string",
+            "description": "Includes AUDIO_SOURCE_UNAVAILABLE, TRANSCODE_UNAVAILABLE and TRANSCODE_FAILED; no signed media URLs, credentials or worker stderr are exposed."
           }
         }
       }
