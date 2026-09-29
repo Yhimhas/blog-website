@@ -16,14 +16,17 @@ type Failure string
 func (e Failure) Error() string { return string(e) }
 
 const (
-	NotFound    Failure = "TRACK_NOT_FOUND"
-	Unsupported Failure = "PLAYBACK_UNSUPPORTED"
-	Unavailable Failure = "UPSTREAM_UNAVAILABLE"
-	RateLimited Failure = "UPSTREAM_RATE_LIMITED"
-	Timeout     Failure = "PLAYBACK_TIMEOUT"
-	Busy        Failure = "PLAYBACK_BUSY"
-	Conflict    Failure = "STREAM_CONFLICT"
-	Expired     Failure = "SESSION_EXPIRED"
+	NotFound             Failure = "TRACK_NOT_FOUND"
+	Unsupported          Failure = "PLAYBACK_UNSUPPORTED"
+	Unavailable          Failure = "UPSTREAM_UNAVAILABLE"
+	RateLimited          Failure = "UPSTREAM_RATE_LIMITED"
+	Timeout              Failure = "PLAYBACK_TIMEOUT"
+	Busy                 Failure = "PLAYBACK_BUSY"
+	Conflict             Failure = "STREAM_CONFLICT"
+	Expired              Failure = "SESSION_EXPIRED"
+	SourceUnavailable    Failure = "AUDIO_SOURCE_UNAVAILABLE"
+	TranscodeUnavailable Failure = "TRANSCODE_UNAVAILABLE"
+	TranscodeFailed      Failure = "TRANSCODE_FAILED"
 )
 
 func Code(err error) Failure {
@@ -43,8 +46,26 @@ func Code(err error) Failure {
 
 type Audio struct {
 	URL, MIME string
-	Headers   map[string]string
-	Duration  *int
+	// InputFormat is a fixed FFmpeg demuxer name, never supplied by an API caller.
+	InputFormat    string
+	Transcode      bool
+	RedirectPolicy func(*http.Request, []*http.Request) error
+	Headers        map[string]string
+	Duration       *int
+}
+type Resolvers map[string]Resolver
+
+func (r Resolvers) Resolve(ctx context.Context, t provider.Track) (Audio, error) {
+	resolver := r[t.Provider]
+	if resolver == nil {
+		return Audio{}, Unsupported
+	}
+	return resolver.Resolve(ctx, t)
+}
+
+type Options struct {
+	FFmpeg         string
+	ForceTranscode bool
 }
 type Resolver interface {
 	Resolve(context.Context, provider.Track) (Audio, error)
@@ -89,11 +110,17 @@ type Service struct {
 	resolving, streaming int
 	pending              map[string]bool
 	client               *http.Client
+	options              Options
+	transcoders          chan struct{}
 }
 
-func New(ctx context.Context, r Resolver, db Store) *Service {
+func New(ctx context.Context, r Resolver, db Store, options ...Options) *Service {
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Service{ctx: ctx, cancel: cancel, resolver: r, store: db, sessions: map[string]*session{}, limits: map[string]counter{}, pending: map[string]bool{}, client: MediaClient()}
+	s.transcoders = make(chan struct{}, 2)
+	if len(options) > 0 {
+		s.options = options[0]
+	}
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
@@ -176,7 +203,8 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (View, error
 	s.workers.Add(1)
 	s.mu.Unlock()
 	track, err := s.store.Find(ctx, id)
-	if err != nil || track.Provider != "bilibili" || track.PartID == nil || *track.PartID != "1" {
+	supported := (track.Provider == "bilibili" && track.PartID != nil && *track.PartID == "1") || (track.Provider == "netease" && track.PartID == nil)
+	if err != nil || !supported {
 		s.mu.Lock()
 		delete(s.pending, owner)
 		s.resolving--
@@ -205,6 +233,12 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (View, error
 		rc, done := context.WithTimeout(c, 20*time.Second)
 		a, err := s.resolver.Resolve(rc, track)
 		done()
+		if err == nil && (a.Transcode || s.options.ForceTranscode) {
+			a.Transcode = true
+			if s.options.FFmpeg == "" {
+				err = TranscodeUnavailable
+			}
+		}
 		s.mu.Lock()
 		shouldRecord := !terminal(v.Status) && err != nil
 		s.resolving--
@@ -214,6 +248,9 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (View, error
 			} else {
 				v.audio = a
 				v.MIME = a.MIME
+				if a.Transcode {
+					v.MIME = "audio/mpeg"
+				}
 				v.Duration = a.Duration
 				v.StreamURL = "/api/v1/music/streams/" + v.ID
 				v.Status = "ready"

@@ -10,7 +10,8 @@ import (
 )
 
 type Config struct {
-	MediaAddr, YTDLP                  string
+	MediaAddr, YTDLP, FFmpeg          string
+	MusicForceTranscode               bool
 	MusicPlayback                     bool
 	Addr, DatabaseURL, Origin, Env    string
 	SessionTTL                        time.Duration
@@ -51,6 +52,16 @@ func LoadConfig() (Config, error) {
 		return c, errors.New("MUSIC_MEDIA_ADDR must use a loopback IP")
 	}
 	c.YTDLP = os.Getenv("MUSIC_YTDLP")
+	c.FFmpeg = os.Getenv("MUSIC_FFMPEG")
+	if c.FFmpeg == "" {
+		c.FFmpeg = "ffmpeg"
+	}
+	if v := os.Getenv("MUSIC_FORCE_TRANSCODE"); v != "" {
+		c.MusicForceTranscode, err = strconv.ParseBool(v)
+		if err != nil {
+			return c, errors.New("MUSIC_FORCE_TRANSCODE must be boolean")
+		}
+	}
 	if c.YTDLP == "" {
 		c.YTDLP = "yt-dlp"
 	}

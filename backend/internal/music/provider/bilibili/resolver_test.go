@@ -89,3 +89,26 @@ func TestBoundedOutput(t *testing.T) {
 		t.Fatal("unbounded")
 	}
 }
+
+func TestAudioFormats(t *testing.T) {
+	for _, tc := range []struct {
+		payload   string
+		transcode bool
+		format    string
+	}{
+		{`{"url":"https://cdn.bilivideo.com/a","vcodec":"none","acodec":"mp4a.40.2","ext":"m4a"}`, false, "mov"},
+		{`{"url":"https://cdn.bilivideo.com/a","vcodec":"none","acodec":"flac","ext":"flac"}`, true, "flac"},
+		{`{"url":"https://cdn.bilivideo.com/a","vcodec":"none","acodec":"opus","ext":"webm"}`, true, "matroska"},
+		{`{"url":"https://cdn.bilivideo.com/a","vcodec":"none","acodec":"flac","ext":"m4a"}`, true, "mov"},
+	} {
+		a, e := parseAudio([]byte(tc.payload))
+		if e != nil || a.Transcode != tc.transcode || a.InputFormat != tc.format {
+			t.Fatal(a, e)
+		}
+	}
+	for _, payload := range []string{`{"url":"https://cdn.bilivideo.com/a","vcodec":"h264","acodec":"aac","ext":"mp4"}`, `{"url":"https://cdn.bilivideo.com/a","vcodec":"none","acodec":"aac","ext":"m3u8"}`} {
+		if _, e := parseAudio([]byte(payload)); e != playback.Unsupported {
+			t.Fatal("unsafe audio accepted", e)
+		}
+	}
+}

@@ -21,7 +21,7 @@ export function useMusicPlayer() {
         await release();
         if (g !== generation)
             return;
-        if (selected.platform !== 'bilibili' || selected.availability === 'unavailable') {
+        if (selected.platform !== 'bilibili' && selected.platform !== 'netease') {
             state.value = 'error';
             message.value = playbackMessage('PLAYBACK_UNSUPPORTED');
             return;

@@ -20,7 +20,7 @@ func (s *Service) Checked(ctx context.Context, id string, code playback.Failure)
 	availability := "unknown"
 	if code == "" {
 		availability = "available"
-	} else if code == playback.Unsupported {
+	} else if code == playback.Unsupported || code == playback.SourceUnavailable {
 		availability = "unavailable"
 	}
 	if availability == "unknown" {

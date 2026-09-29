@@ -1,6 +1,7 @@
 package playback
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"io"
@@ -95,7 +96,15 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		return
 	}
 	var result error
-	defer func() { s.release(v, result) }()
+	started := false
+	defer func() {
+		s.release(v, result)
+		// A graceful chunked EOF could be mistaken for a successfully ended song.
+		// Abort the connection on late upstream/transcoder failures instead.
+		if result != nil && started {
+			panic(http.ErrAbortHandler)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(v.ctx, 6*time.Hour)
 	defer cancel()
 	disconnect := context.AfterFunc(r.Context(), cancel)
@@ -117,7 +126,21 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		}
 	}
 	client := s.client
+	if v.audio.RedirectPolicy != nil {
+		copyClient := *client
+		copyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := v.audio.RedirectPolicy(req, via); err != nil {
+				return err
+			}
+			if len(via) > 3 || !MediaURL(req.URL.String()) {
+				return Unsupported
+			}
+			return nil
+		}
+		client = &copyClient
+	}
 	first := time.AfterFunc(15*time.Second, cancel)
+	defer first.Stop()
 	resp, err := client.Do(req)
 	if err != nil {
 		first.Stop()
@@ -140,9 +163,6 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 	}
 	buf := make([]byte, 64*1024)
 	n, err := io.ReadAtLeast(resp.Body, buf, 12)
-	first.Stop()
-	ct := strings.ToLower(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
-	// Bilibili returns octet-stream for fMP4; validate the ftyp box before accepting it.
 	if err != nil {
 		result = Unavailable
 		if ctx.Err() != nil {
@@ -151,15 +171,54 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		fail(503, Code(result))
 		return
 	}
-	if n < 12 || string(buf[4:8]) != "ftyp" || (ct != "application/octet-stream" && ct != "audio/mp4" && ct != "video/mp4") {
+	format := DetectFormat(buf[:n], resp.Header.Get("Content-Type"))
+	if format == "" || (v.audio.InputFormat != "" && format != v.audio.InputFormat) {
 		result = Unsupported
 		fail(422, Unsupported)
 		return
 	}
-	checkCtx, done := context.WithTimeout(ctx, 3*time.Second)
-	s.store.Checked(checkCtx, v.Attribution.ID, "")
-	done()
-	w.Header().Set("Content-Type", v.audio.MIME)
+	var reader io.Reader = resp.Body
+	outputMIME := FormatMIME(format)
+	var converted *transcodeStream
+	if v.audio.Transcode {
+		input := struct {
+			io.Reader
+			io.Closer
+		}{io.MultiReader(bytes.NewReader(bytes.Clone(buf[:n])), resp.Body), resp.Body}
+		converted, err = s.transcode(ctx, input, format)
+		if err != nil {
+			result = err
+			status := 503
+			if err == Busy {
+				status = 429
+			}
+			fail(status, Code(err))
+			return
+		}
+		defer converted.Close()
+		n, err = io.ReadAtLeast(converted, buf, 12)
+		if err != nil || DetectFormat(buf[:n], "audio/mpeg") != "mp3" {
+			result = TranscodeFailed
+			if ctx.Err() != nil {
+				result = Timeout
+			}
+			fail(503, Code(result))
+			return
+		}
+		reader = converted
+		outputMIME = "audio/mpeg"
+	} else if format != "mov" && format != "mp3" {
+		result = Unsupported
+		fail(422, Unsupported)
+		return
+	}
+	first.Stop()
+	if ctx.Err() != nil {
+		result = Timeout
+		fail(503, Timeout)
+		return
+	}
+	w.Header().Set("Content-Type", outputMIME)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -177,6 +236,7 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			_ = rc.SetWriteDeadline(time.Now())
 			return ctx.Err()
 		}
+		started = true
 		if _, e := w.Write(b); e != nil {
 			return e
 		}
@@ -186,8 +246,11 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		result = Unavailable
 		return
 	}
+	checkCtx, done := context.WithTimeout(ctx, 3*time.Second)
+	s.store.Checked(checkCtx, v.Attribution.ID, "")
+	done()
 	for {
-		n, err = resp.Body.Read(buf)
+		n, err = reader.Read(buf)
 		if n > 0 {
 			if e := write(buf[:n]); e != nil {
 				result = Unavailable
@@ -195,6 +258,9 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			}
 		}
 		if err == io.EOF {
+			if converted != nil {
+				result = converted.Wait()
+			}
 			return
 		}
 		if err != nil {

@@ -42,3 +42,10 @@ test('expired pause requires restart and route disposal stops the session',async
  globalThis.fetch=async(url,options)=>{if(url.endsWith('/stop')){stopped=true;return new Response(null,{status:204})};if(expired)return new Response(JSON.stringify({error:{code:'SESSION_EXPIRED'}}),{status:410});return response(session('pause'))}
  const scope=effectScope();const p=scope.run(()=>useMusicPlayer());await p.play(track,[track]);await p.toggle();assert.equal(p.state.value,'paused');expired=true;await p.toggle();assert.equal(p.state.value,'error');assert.match(p.message.value,/重新播放/);scope.stop();assert.equal(stopped,true)
 })
+
+test('NetEase uses unified playback and preserves official fallback on refusal', async()=>{
+ globalThis.Audio=AudioMock;AudioMock.reject=false;let requested='',deny=false
+ globalThis.fetch=async(url,options)=>{if(url.endsWith('/stop'))return new Response(null,{status:204});if(options.method==='POST')requested=JSON.parse(options.body).trackId;if(deny)return new Response(JSON.stringify({error:{code:'AUDIO_SOURCE_UNAVAILABLE'}}),{status:422});return response(session('netease'))}
+ const scope=effectScope();const p=scope.run(()=>useMusicPlayer());const netease={...track,id:'netease:123',platform:'netease',url:'https://music.163.com/#/song?id=123'}
+ await p.play(netease,[netease]);assert.equal(requested,'netease:123');assert.equal(p.state.value,'playing');deny=true;await p.play(netease,[netease]);assert.equal(p.state.value,'error');assert.match(p.message.value,/官方音源/);assert.equal(p.track.value.url,netease.url);scope.stop()
+})

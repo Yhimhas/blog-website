@@ -208,3 +208,9 @@ go run ./cmd/manage import-bilibili ../frontend/src/data/bilibili-playlist.json
 ```
 
 导入只保存元数据，availability 为 unknown；实际媒体校验成功后才标记 available。不修改当天已保存的推荐。
+
+## 网易云音源与 FFmpeg
+
+配置示例已加入 `MUSIC_FFMPEG=ffmpeg` 和 `MUSIC_FORCE_TRANSCODE=false`。启用播放时，yt-dlp 与 FFmpeg 必须可执行；FFmpeg 构建需包含 libmp3lame。正常 MP3 / 已确认 AAC-M4A 直接转发；FLAC、Ogg/Opus、WebM 音轨、WAV、ADTS AAC 等使用最多两个 FFmpeg Worker 输出 128 kbps MP3。设置 `MUSIC_FORCE_TRANSCODE=true` 可统一采用 MP3 兼容路径。
+
+网易云 resolver 使用官方公开外链，仍受曲目权限和来源平台响应限制。同步 metadata 不代表音源可用，拒绝响应不会冒充空音频。实现、测试和环境限制见 [网易云与转码验收记录](../docs/music-netease-transcode-validation.md)。
