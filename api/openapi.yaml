@@ -3214,7 +3214,7 @@
           "syncErrorCode": {
             "type": "string",
             "nullable": true,
-            "description": "当前同步失败的项目错误码，来自 last_error_code；pending/running/ready 通常为 null。20001 映射 UPSTREAM_ACCESS_RESTRICTED，具体原因未知；其他明确非成功业务码映射 UPSTREAM_REJECTED（401/403、429 保留专用分类）。INCOMPLETE_PLAYLIST 表示数量不完整；INVALID_PAYLOAD 表示 JSON 或字段结构异常。失败保留已有曲目、syncedAt 和快照 hash，不返回上游 msg。"
+            "description": "当前同步失败的项目错误码，来自 last_error_code；pending/running/ready 通常为 null。20001 映射 UPSTREAM_ACCESS_RESTRICTED，具体原因未知；其他明确非成功业务码映射 UPSTREAM_REJECTED（401/403、429 保留专用分类）。INCOMPLETE_PLAYLIST 表示 ID 清单或曲目详情不完整，或分批补齐后的 ID 清单/顺序发生变化；INVALID_PAYLOAD 表示 JSON 或字段结构异常。失败保留已有曲目、syncedAt 和快照 hash，不返回上游 msg。"
           },
           "trackCount": {
             "type": "integer",

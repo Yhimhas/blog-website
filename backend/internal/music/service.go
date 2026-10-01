@@ -10,6 +10,7 @@ import (
 	"errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -214,6 +215,8 @@ func (s *Service) SyncDaily(ctx context.Context, now time.Time) error {
 func (s *Service) execute(source Source, run Run) {
 	ctx, cancel := context.WithTimeout(s.Context, 30*time.Second)
 	defer cancel()
+	logger := slog.Default().With("requestId", run.RequestID, "sourceId", source.ID, "runId", run.ID)
+	ctx = provider.WithSyncLogger(ctx, logger)
 	items, err := s.Adapter.FetchPlaylist(ctx, provider.Ref{Provider: source.Provider, ExternalID: source.ExternalID, Title: source.Title, SourceURL: source.SourceURL, EmbedURL: source.EmbedURL})
 	if err == nil {
 		err = provider.Validate(items, source.Provider)
@@ -222,9 +225,14 @@ func (s *Service) execute(source Source, run Run) {
 		err = s.ReplaceSnapshot(ctx, source, run, items)
 	}
 	if err != nil {
+		logger.Warn("music sync failed", "errorCode", provider.Code(err))
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
-		s.fail(cleanup, run, provider.Code(err))
+		if failureErr := s.fail(cleanup, run, provider.Code(err)); failureErr != nil {
+			logger.Error("music sync failure status could not be persisted")
+		}
+	} else {
+		logger.Info("music sync completed", "actualCount", len(items))
 	}
 }
 func (s *Service) fail(ctx context.Context, run Run, code string) error {

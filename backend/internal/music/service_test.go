@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,25 @@ type refusedPlaylist struct{ body string }
 
 func (a refusedPlaylist) FetchPlaylist(context.Context, provider.Ref) ([]provider.Track, error) {
 	return netease.Parse([]byte(a.body))
+}
+
+type syncMetadataTransport func(*http.Request) (*http.Response, error)
+
+func (f syncMetadataTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func incompleteBatchAdapter(songBody string, changed bool) provider.Adapter {
+	details := 0
+	return &netease.Client{HTTP: &http.Client{Transport: syncMetadataTransport(func(req *http.Request) (*http.Response, error) {
+		body := songBody
+		if req.URL.Path == "/api/v6/playlist/detail" {
+			details++
+			body = `{"code":200,"playlist":{"trackCount":2,"trackIds":[{"id":1},{"id":2}],"tracks":[{"id":1,"name":"preview"}]}}`
+			if changed && details > 1 {
+				body = `{"code":200,"playlist":{"trackCount":2,"trackIds":[{"id":2},{"id":1}],"tracks":[]}}`
+			}
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}}
 }
 
 // A scripted SQL connection exercises the actual GORM updates without connecting
@@ -94,11 +114,17 @@ func (r *syncSQLRows) Next(out []driver.Value) error {
 }
 
 func TestSyncFailurePreservesSnapshotAndExposesError(t *testing.T) {
-	for _, tc := range []struct{ body, code string }{
-		{`{"msg":"","code":20001}`, "UPSTREAM_ACCESS_RESTRICTED"},
-		{`{"code":50001}`, "UPSTREAM_REJECTED"},
-		{`{"code":200,"playlist":{"trackCount":265,"tracks":[]}}`, "INCOMPLETE_PLAYLIST"},
-		{`{"code":200,"playlist":false}`, "INVALID_PAYLOAD"},
+	for _, tc := range []struct {
+		body, code string
+		adapter    provider.Adapter
+	}{
+		{body: `{"msg":"","code":20001}`, code: "UPSTREAM_ACCESS_RESTRICTED"},
+		{body: `{"code":50001}`, code: "UPSTREAM_REJECTED"},
+		{body: `{"code":200,"playlist":{"trackCount":265,"tracks":[]}}`, code: "INCOMPLETE_PLAYLIST"},
+		{body: `{"code":200,"playlist":false}`, code: "INVALID_PAYLOAD"},
+		{code: "INCOMPLETE_PLAYLIST", adapter: incompleteBatchAdapter(`{"code":200,"songs":[]}`, false)},
+		{code: "UPSTREAM_RATE_LIMITED", adapter: incompleteBatchAdapter(`{"code":429}`, false)},
+		{code: "INCOMPLETE_PLAYLIST", adapter: incompleteBatchAdapter(`{"code":200,"songs":[{"id":2,"name":"detail"}]}`, true)},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			oldTime := time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC)
@@ -155,7 +181,11 @@ func TestSyncFailurePreservesSnapshotAndExposesError(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			service := New(db, refusedPlaylist{tc.body}, context.Background())
+			adapter := tc.adapter
+			if adapter == nil {
+				adapter = refusedPlaylist{tc.body}
+			}
+			service := New(db, adapter, context.Background())
 			if _, err := service.StartSync(context.Background(), source.ID, "local-fixture"); err != nil {
 				t.Fatal(err)
 			}
