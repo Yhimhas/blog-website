@@ -67,8 +67,24 @@ const selectedId = ref("");
 const favorites = ref<string[]>([]);
 const notice = ref("");
 const selectedPlaylistId = ref('');
-const neteasePlaylist = computed(() => platformPlaylists.value.find(item => item.id === 'netease:595975585'));
-const pendingPlaylist = computed(() => activeTab.value === 'library' && platform.value === 'netease' && !!neteasePlaylist.value && neteasePlaylist.value.syncStatus !== 'ready');
+const playlistSyncNotices = computed(() => {
+  if (activeTab.value !== 'library' || libraryStatus.value === 'loading' || libraryError.value) return [];
+  return platformPlaylists.value
+    .filter(item => (platform.value === 'all' || item.platform === platform.value) && item.syncStatus !== 'ready')
+    .map(playlist => {
+      const hasTracks = playlist.tracks.length > 0;
+      switch (playlist.syncStatus) {
+        case 'pending':
+          return { playlist, label: '待同步', message: hasTracks ? '歌单待同步，已收录曲目仍可搜索和选择。' : '歌单已添加，曲目列表待同步。可先前往原站查看。' };
+        case 'running':
+          return { playlist, label: '同步中', message: hasTracks ? '歌单正在同步，已收录曲目仍可搜索和选择。' : '歌单正在同步，曲目列表尚未就绪。可先前往原站查看。' };
+        case 'failed':
+          return { playlist, label: '同步失败', message: hasTracks ? '歌单同步失败，已收录曲目仍可搜索和选择。可稍后重新加载查看同步状态，或前往原站。' : '歌单同步失败，暂未收录曲目。可稍后重新加载查看同步状态，或前往原站。' };
+        default:
+          return { playlist, label: '同步状态未知', message: '暂时无法确认歌单同步状态，请重新加载或前往原站查看。' };
+      }
+    });
+});
 const day = ref(shanghaiDate());
 const localTracks = computed(() => [...new Map(platformPlaylists.value.flatMap(p => p.tracks).map(t => [t.id,t])).values()]);
 const savedRecommendedTracks = ref<MusicTrack[]>([]);
@@ -370,7 +386,7 @@ onBeforeUnmount(() => {
                 }}</span
               ><span
                 >{{
-                  pendingPlaylist ? '待同步' : `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
+                  `${String(visibleTracks.length).padStart(2, "0")} TRACKS`
                 }}
                 </span
               >
@@ -394,9 +410,8 @@ onBeforeUnmount(() => {
               ><MusicIcon name="search" /><input
                 v-model="query"
                 type="search"
-                :disabled="pendingPlaylist"
                 :placeholder="
-                  pendingPlaylist ? '歌单已添加，曲目列表待同步' : activeTab === 'favorites'
+                  activeTab === 'favorites'
                     ? '搜索我的收藏…'
                     : '搜索歌名、作者…'
                 "
@@ -433,6 +448,15 @@ onBeforeUnmount(() => {
             >
               <Transition name="music-source" mode="out-in" @before-enter="resetTrackScroll">
               <div :key="platform" class="music-source-results">
+              <div v-for="item in playlistSyncNotices" :key="item.playlist.id" class="music-playlist-status" role="status">
+                <strong>{{ item.playlist.title }} · {{ item.label }}</strong>
+                <p>{{ item.message }}</p>
+                <div class="music-playlist-actions">
+                  <button @click="openPlaylist(item.playlist.id)">选择此歌单</button>
+                  <button @click="loadLibrary">重新加载</button>
+                  <a :href="item.playlist.url" target="_blank" rel="noopener noreferrer">在{{ item.playlist.platform === 'netease' ? '网易云' : 'Bilibili' }}查看歌单 ↗</a>
+                </div>
+              </div>
               <article
                 v-for="(track, index) in visibleTracks"
                 :key="track.id"
@@ -484,7 +508,7 @@ onBeforeUnmount(() => {
                 }}</span>
                 <h3>
                   {{
-                    showingDaily ? (recommendationLoading ? '正在加载每日推荐' : recommendationError ? '今日推荐暂不可用' : '今天暂无推荐曲目') : pendingPlaylist ? neteasePlaylist?.title : searching
+                    showingDaily ? (recommendationLoading ? '正在加载每日推荐' : recommendationError ? '今日推荐暂不可用' : '今天暂无推荐曲目') : searching
                       ? "暂时没有找到这段旋律"
                       : platform === "netease" && activeTab === 'favorites'
                         ? "还没有收藏的网易云曲目"
@@ -495,7 +519,7 @@ onBeforeUnmount(() => {
                 </h3>
                 <p>
                   {{
-                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : pendingPlaylist ? (neteasePlaylist?.syncStatus === 'failed' ? '歌单同步失败，请稍后重试或前往原站。' : '歌单已添加，曲目列表待同步。请前往网易云官方页面查看和播放。') : searching
+                    showingDaily ? (recommendationLoading ? '稍等片刻，正在获取今天的歌单。' : recommendationError || '暂时没有可推荐的曲目，可以先逛逛音乐库。') : searching
                       ? "换一个歌名或作者试试。"
                       : activeTab === "favorites"
                         ? "点击曲目旁的爱心，就能在这里再次遇见。"
@@ -503,10 +527,6 @@ onBeforeUnmount(() => {
                   }}
                 </p>
                 <button v-if="showingDaily && recommendationError && !recommendationLoading" @click="loadRecommendations">重新加载 ↗</button>
-                <div v-if="pendingPlaylist && neteasePlaylist" class="music-playlist-actions">
-                  <button @click="openPlaylist(neteasePlaylist.id)">选择此歌单</button>
-                  <a :href="neteasePlaylist.url" target="_blank" rel="noopener noreferrer">在网易云查看歌单 ↗</a>
-                </div>
                 <button
                   v-if="
                     activeTab === 'favorites' &&
