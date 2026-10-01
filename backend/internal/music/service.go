@@ -19,17 +19,18 @@ var ErrCapacity = errors.New("sync capacity exceeded")
 var errAttempted = errors.New("already attempted today")
 
 type Source struct {
-	ID           string     `json:"id"`
-	Provider     string     `json:"provider"`
-	ExternalID   string     `json:"-"`
-	Title        string     `json:"title"`
-	SourceURL    string     `json:"sourceUrl"`
-	EmbedURL     *string    `json:"embedUrl"`
-	Enabled      bool       `json:"-"`
-	SyncStatus   string     `json:"syncStatus"`
-	SyncedAt     *time.Time `json:"syncedAt"`
-	SnapshotHash string     `json:"-"`
-	TrackCount   int64      `json:"trackCount" gorm:"->"`
+	ID            string     `json:"id"`
+	Provider      string     `json:"provider"`
+	ExternalID    string     `json:"-"`
+	Title         string     `json:"title"`
+	SourceURL     string     `json:"sourceUrl"`
+	EmbedURL      *string    `json:"embedUrl"`
+	Enabled       bool       `json:"-"`
+	SyncStatus    string     `json:"syncStatus"`
+	SyncErrorCode *string    `json:"syncErrorCode" gorm:"column:last_error_code"`
+	SyncedAt      *time.Time `json:"syncedAt"`
+	SnapshotHash  string     `json:"-"`
+	TrackCount    int64      `json:"trackCount" gorm:"->"`
 }
 
 func (Source) TableName() string { return "music_sources" }
@@ -163,7 +164,7 @@ func (s *Service) startSync(ctx context.Context, id, requestID string, since tim
 		if err := tx.Create(&run).Error; err != nil {
 			return err
 		}
-		return tx.Model(&Source{}).Where("id=?", id).Updates(map[string]any{"sync_status": "running", "updated_at": time.Now().UTC()}).Error
+		return tx.Model(&Source{}).Where("id=?", id).Updates(map[string]any{"sync_status": "running", "last_error_code": nil, "last_error_at": nil, "updated_at": time.Now().UTC()}).Error
 	})
 	if err != nil {
 		<-s.slots

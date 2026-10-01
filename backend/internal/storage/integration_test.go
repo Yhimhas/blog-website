@@ -5,6 +5,7 @@ import (
 	"blog-website/backend/internal/blog"
 	"blog-website/backend/internal/music"
 	"blog-website/backend/internal/music/provider"
+	"blog-website/backend/internal/music/provider/netease"
 	"blog-website/backend/internal/recommendation"
 	"blog-website/backend/internal/storage"
 	"blog-website/backend/migrations"
@@ -173,6 +174,10 @@ func TestPostgresContracts(t *testing.T) {
 	serviceCtx, cancel := context.WithCancel(ctx)
 	ms := music.New(db, blocking, serviceCtx)
 	defer func() { cancel(); ms.Stop() }()
+	before, err := ms.Playlists(ctx)
+	if err != nil || len(before) != 1 || before[0].SyncedAt == nil {
+		t.Fatal("missing initial snapshot metadata", err)
+	}
 	first, err := ms.StartSync(ctx, source.ID, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +198,9 @@ func TestPostgresContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 		if run.Status == "failed" {
+			if run.ErrorCode == nil || *run.ErrorCode != "UPSTREAM_ACCESS_RESTRICTED" || run.CandidateCount != 0 {
+				t.Fatal("business refusal classification lost", run)
+			}
 			break
 		}
 		if time.Now().After(deadline) {
@@ -203,6 +211,13 @@ func TestPostgresContracts(t *testing.T) {
 	got, count, err := ms.Tracks(ctx, source.ID, 1, 20)
 	if err != nil || count != 1 || got[0].Title != "original" {
 		t.Fatal("upstream failure lost snapshot", err)
+	}
+	after, err := ms.Playlists(ctx)
+	if err != nil || len(after) != 1 {
+		t.Fatal("failed playlist not readable", err)
+	}
+	if after[0].SyncStatus != "failed" || after[0].SyncErrorCode == nil || *after[0].SyncErrorCode != "UPSTREAM_ACCESS_RESTRICTED" || after[0].TrackCount != 1 || after[0].SyncedAt == nil || !after[0].SyncedAt.Equal(*before[0].SyncedAt) || after[0].SnapshotHash != before[0].SnapshotHash {
+		t.Fatal("failure changed snapshot or lost public error", after[0])
 	}
 	if err := db.Exec("ALTER TABLE music_items ADD CONSTRAINT reject_test_title CHECK (title <> 'reject')").Error; err != nil {
 		t.Fatal(err)
@@ -229,6 +244,10 @@ func TestPostgresContracts(t *testing.T) {
 	preserved, _, err := ms.Tracks(ctx, source.ID, 1, 20)
 	if err != nil || preserved[0].Availability != "available" {
 		t.Fatal("sync erased verified availability", err)
+	}
+	recovered, err := ms.Playlists(ctx)
+	if err != nil || len(recovered) != 1 || recovered[0].SyncStatus != "ready" || recovered[0].SyncErrorCode != nil {
+		t.Fatal("successful snapshot did not clear the sync error", recovered, err)
 	}
 	rec := recommendation.Service{DB: db}
 	now := time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
@@ -273,6 +292,6 @@ func (b *blockingAdapter) FetchPlaylist(ctx context.Context, _ provider.Ref) ([]
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-b.release:
-		return nil, provider.Failure("UPSTREAM_TIMEOUT")
+		return netease.Parse([]byte(`{"msg":"","code":20001}`))
 	}
 }

@@ -82,28 +82,36 @@ type playlist struct {
 
 func Parse(body []byte) ([]provider.Track, error) {
 	var p struct {
-		Code     int       `json:"code"`
-		Result   *playlist `json:"result"`
-		Playlist *playlist `json:"playlist"`
+		Code     *int            `json:"code"`
+		Result   json.RawMessage `json:"result"`
+		Playlist json.RawMessage `json:"playlist"`
 	}
-	if json.Unmarshal(body, &p) != nil {
+	if json.Unmarshal(body, &p) != nil || p.Code == nil {
 		return nil, provider.InvalidPayload
 	}
-	if p.Code == 401 || p.Code == 403 {
+	// Read the business status before decoding success-only playlist fields.
+	// 20001 is an explicit refusal; it does not establish why access failed.
+	switch *p.Code {
+	case 200:
+	case 401, 403:
 		return nil, provider.Failure("UPSTREAM_UNAUTHORIZED")
-	}
-	if p.Code == 429 {
+	case 429:
 		return nil, provider.Failure("UPSTREAM_RATE_LIMITED")
+	case 20001:
+		return nil, provider.UpstreamAccessRestricted
+	default:
+		return nil, provider.UpstreamRejected
 	}
-	if p.Code != 200 {
+	raw := p.Playlist
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = p.Result
+	}
+	var list *playlist
+	if json.Unmarshal(raw, &list) != nil || list == nil || list.TrackCount == nil || list.Tracks == nil || *list.TrackCount < 0 || *list.TrackCount > 2000 || len(*list.Tracks) > 2000 {
 		return nil, provider.InvalidPayload
 	}
-	list := p.Playlist
-	if list == nil {
-		list = p.Result
-	}
-	if list == nil || list.TrackCount == nil || list.Tracks == nil || *list.TrackCount != len(*list.Tracks) || *list.TrackCount > 2000 {
-		return nil, provider.InvalidPayload
+	if *list.TrackCount != len(*list.Tracks) {
+		return nil, provider.IncompletePlaylist
 	}
 	tracks := []provider.Track{}
 	seen := map[string]bool{}
