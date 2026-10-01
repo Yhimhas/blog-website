@@ -39,12 +39,26 @@ export async function fetchMusicLibrary(signal: AbortSignal): Promise<MusicPlayl
         if (u.protocol !== 'https:' || u.username || u.password || !['space.bilibili.com', 'music.163.com'].includes(u.host))
             throw Error('歌单来源无效');
         const tracks: MusicTrack[] = [];
+        const seen = new Set<string>();
+        let expectedTotal: number | undefined;
         for (let page = 1; page <= 40; page++) {
             const response = await get(`/api/v1/music/playlists/${encodeURIComponent(p.id)}/tracks?page=${page}&pageSize=50`, signal);
-            if (!Array.isArray(response.data) || !Number.isInteger(response.pagination?.total) || response.pagination.total > 2000)
+            if (!Array.isArray(response.data) || response.data.length > 50 || !Number.isInteger(response.pagination?.total) || response.pagination.total < 0 || response.pagination.total > 2000)
                 throw Error('曲目分页无效');
-            tracks.push(...response.data.map((t: unknown) => ({ ...mapTrack(t), playlistId: p.id })));
-            if (tracks.length >= response.pagination.total)
+            const total: number = response.pagination.total;
+            if (expectedTotal !== undefined && expectedTotal !== total)
+                throw Error('歌单在加载期间发生变化，请重新加载');
+            expectedTotal = total;
+            for (const raw of response.data) {
+                const track = mapTrack(raw);
+                if (track.platform !== p.provider || seen.has(track.id))
+                    throw Error('曲目分页包含重复或来源不符的曲目，请重新加载');
+                seen.add(track.id);
+                tracks.push({ ...track, playlistId: p.id });
+            }
+            if (tracks.length > total)
+                throw Error('曲目分页数量不一致，请重新加载');
+            if (tracks.length === total)
                 break;
             if (!response.data.length || page === 40)
                 throw Error('曲目分页未加载完整');
