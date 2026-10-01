@@ -193,6 +193,10 @@
 .music-playlist-actions { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center; margin-top: 18px; }
 .music-playlist-actions button { display: flex; align-items: center; gap: 8px; }
 .music-playlist-actions a { font-size: 12px; text-decoration: underline; text-underline-offset: 4px; }
+.music-playlist-status { padding: 14px 10px; border-bottom: 1px solid #11121e33; font-size: 12px; line-height: 1.8; }
+.music-playlist-status p { margin: 6px 0; color: #62616b; }
+.music-playlist-status .music-playlist-actions { justify-content: flex-start; margin-top: 10px; }
+.music-playlist-status button { border: 0; background: var(--ink); color: var(--paper); padding: 8px 12px; font-size: 12px; }
 .music-search input:disabled { cursor: not-allowed; }
 
 .music-player-status { margin: 0; border-top: 1px solid #11121e33; padding: 12px 24px; font-size: 12px; line-height: 1.8; color: #65636d; }
