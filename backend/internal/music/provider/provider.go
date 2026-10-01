@@ -39,6 +39,9 @@ func (e Failure) Error() string { return string(e) }
 
 const InvalidPayload Failure = "INVALID_PAYLOAD"
 const InvalidSource Failure = "INVALID_SOURCE"
+const UpstreamAccessRestricted Failure = "UPSTREAM_ACCESS_RESTRICTED"
+const UpstreamRejected Failure = "UPSTREAM_REJECTED"
+const IncompletePlaylist Failure = "INCOMPLETE_PLAYLIST"
 
 func Code(err error) string {
 	var failure Failure

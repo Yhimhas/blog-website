@@ -6,6 +6,7 @@ import { useMusicLibrary } from '../useMusicLibrary';
 import { useMusicPlayer } from '../useMusicPlayer';
 import { migrateFavoriteID, legacyFavorite, missingFavorite, readFavoriteSnapshots } from '../musicFavorites';
 import type { MusicTrack } from '../musicLibraryApi';
+import { playlistSyncFailureMessage } from '../musicLibraryApi';
 const { playlists: platformPlaylists, status: libraryStatus, error: libraryError, reload: loadLibrary } = useMusicLibrary();
 const player = useMusicPlayer();
 const { state: playerState, message: playerMessage, currentTime, duration, volume } = player;
@@ -79,7 +80,7 @@ const playlistSyncNotices = computed(() => {
         case 'running':
           return { playlist, label: '同步中', message: hasTracks ? '歌单正在同步，已收录曲目仍可搜索和选择。' : '歌单正在同步，曲目列表尚未就绪。可先前往原站查看。' };
         case 'failed':
-          return { playlist, label: '同步失败', message: hasTracks ? '歌单同步失败，已收录曲目仍可搜索和选择。可稍后重新加载查看同步状态，或前往原站。' : '歌单同步失败，暂未收录曲目。可稍后重新加载查看同步状态，或前往原站。' };
+          return { playlist, label: '同步失败', message: playlistSyncFailureMessage(playlist) };
         default:
           return { playlist, label: '同步状态未知', message: '暂时无法确认歌单同步状态，请重新加载或前往原站查看。' };
       }

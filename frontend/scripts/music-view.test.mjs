@@ -14,8 +14,8 @@ const target = { id: 'netease:595975585', provider: 'netease', title: '指定歌
 const manual = { id: 'netease:1', provider: 'netease', title: '人工导入', sourceUrl: 'https://music.163.com/playlist?id=1', syncStatus: 'ready' }
 const track = { id: 'netease:33894312', provider: 'netease', title: '人工样本', author: '测试作者', sourceUrl: 'https://music.163.com/song?id=33894312', availability: 'unknown' }
 
-async function render(t, { status = 'pending', manualTracks = [], targetTracks = [], query = '', platform = 'netease', tab = 'library', extraPlaylists = [], failLibrary = false } = {}) {
-  const playlists = [{ ...target, syncStatus: status }, manual, ...extraPlaylists]
+async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = null, manualTracks = [], targetTracks = [], query = '', platform = 'netease', tab = 'library', extraPlaylists = [], failLibrary = false } = {}) {
+  const playlists = [{ ...target, syncStatus: status, syncErrorCode, syncedAt }, manual, ...extraPlaylists]
   t.mock.method(globalThis, 'fetch', async url => {
     if (url === '/api/v1/music/recommendations/today') return Response.json({ data: { date: '2026-09-30', timezone: 'Asia/Shanghai', status: 'ready', items: [] } })
     if (failLibrary) return new Response(null, { status: 503 })
@@ -104,4 +104,45 @@ test('library load failure is displayed as a load error rather than a sync state
   const html = await render(t, { status: 'failed', failLibrary: true })
   assert.match(html, /音乐库暂时无法加载，请重试/)
   assert.doesNotMatch(html, /music-playlist-status/)
+})
+
+test('business refusal shows a neutral reason and retains the searchable snapshot', async t => {
+  const html = await render(t, { status: 'failed', syncErrorCode: 'UPSTREAM_ACCESS_RESTRICTED', syncedAt: '2026-09-29T00:00:00Z', targetTracks: [track], query: '人工样本' })
+  assert.match(html, /网易云未提供此歌单的可用数据，本次未完成同步/)
+  assert.match(html, /已保留原有歌单/)
+  assert.match(html, /选择曲目：人工样本/)
+  assert.match(html, /https:\/\/music\.163\.com\/playlist\?id=595975585/)
+  assert.doesNotMatch(html, /响应格式异常|私密|必须登录|版权|尚无完整同步记录/)
+})
+
+test('first sync failure cannot borrow a manual playlist snapshot', async t => {
+  const html = await render(t, { status: 'failed', syncErrorCode: 'UPSTREAM_ACCESS_RESTRICTED', manualTracks: [track] })
+  assert.match(html, /尚无完整同步记录/)
+  assert.match(html, /选择曲目：人工样本/)
+  assert.doesNotMatch(html, /已保留原有歌单|响应格式异常/)
+})
+
+test('a previously synced empty playlist still has a retained snapshot', async t => {
+  const html = await render(t, { status: 'failed', syncErrorCode: 'UPSTREAM_REJECTED', syncedAt: '2026-09-29T00:00:00Z' })
+  assert.match(html, /已保留原有的空歌单快照/)
+  assert.doesNotMatch(html, /尚无完整同步记录/)
+})
+
+test('sync failure reasons are fixed and unknown or missing codes get a safe fallback', async t => {
+  for (const [syncErrorCode, message] of [
+    ['INVALID_PAYLOAD', '网易云响应格式异常'],
+    ['INCOMPLETE_PLAYLIST', '未取得完整的歌单曲目'],
+    ['UPSTREAM_UNAUTHORIZED', '网易云拒绝了本次歌单读取请求'],
+    ['UPSTREAM_RATE_LIMITED', '网易云请求受限'],
+    ['UPSTREAM_TIMEOUT', '读取歌单超时'],
+    ['<script>untrusted upstream message</script>', '暂时无法确认具体原因'],
+    [null, '暂时无法确认具体原因'],
+  ]) {
+    await t.test(String(syncErrorCode), async t => {
+      const html = await render(t, { status: 'failed', syncErrorCode })
+      assert.ok(html.includes(message))
+      assert.match(html, /尚无完整同步记录/)
+      assert.doesNotMatch(html, /untrusted upstream message|私密|必须登录|版权/)
+    })
+  }
 })

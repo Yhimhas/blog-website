@@ -32,11 +32,43 @@ func TestParseCompleteSnapshot(t *testing.T) {
 type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestParseFailureClassification(t *testing.T) {
+	for _, tc := range []struct{ name, body, code string }{
+		{"observed refusal with empty msg", `{"msg":"","code":20001}`, "UPSTREAM_ACCESS_RESTRICTED"},
+		{"refusal before success fields", `{"code":20001,"playlist":"unavailable","msg":"private upstream text"}`, "UPSTREAM_ACCESS_RESTRICTED"},
+		{"unknown business failure", `{"code":50001,"result":false}`, "UPSTREAM_REJECTED"},
+		{"unauthorized", `{"code":401}`, "UPSTREAM_UNAUTHORIZED"},
+		{"forbidden", `{"code":403}`, "UPSTREAM_UNAUTHORIZED"},
+		{"rate limited", `{"code":429}`, "UPSTREAM_RATE_LIMITED"},
+		{"invalid JSON", `{"code":20001`, "INVALID_PAYLOAD"},
+		{"missing code", `{}`, "INVALID_PAYLOAD"},
+		{"null code", `{"code":null}`, "INVALID_PAYLOAD"},
+		{"string code", `{"code":"20001"}`, "INVALID_PAYLOAD"},
+		{"fractional code", `{"code":200.5}`, "INVALID_PAYLOAD"},
+		{"null envelope", `null`, "INVALID_PAYLOAD"},
+		{"missing success data", `{"code":200}`, "INVALID_PAYLOAD"},
+		{"wrong success shape", `{"code":200,"playlist":"bad"}`, "INVALID_PAYLOAD"},
+		{"wrong count type", `{"code":200,"playlist":{"trackCount":"1","tracks":[]}}`, "INVALID_PAYLOAD"},
+		{"missing tracks", `{"code":200,"playlist":{"trackCount":0}}`, "INVALID_PAYLOAD"},
+		{"negative count", `{"code":200,"playlist":{"trackCount":-1,"tracks":[]}}`, "INVALID_PAYLOAD"},
+		{"over limit", `{"code":200,"playlist":{"trackCount":2001,"tracks":[]}}`, "INVALID_PAYLOAD"},
+		{"partial playlist", `{"code":200,"playlist":{"trackCount":265,"tracks":[{"id":123,"name":"preview"}]}}`, "INCOMPLETE_PLAYLIST"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tracks, err := Parse([]byte(tc.body))
+			if err == nil || provider.Code(err) != tc.code || tracks != nil {
+				t.Fatalf("got tracks=%v error=%v; want %s with no candidate snapshot", tracks, err, tc.code)
+			}
+		})
+	}
+}
+
 func TestUpstreamFailures(t *testing.T) {
 	for _, tc := range []struct {
 		status            int
 		body, ctype, code string
-	}{{401, "", "application/json", "UPSTREAM_UNAUTHORIZED"}, {403, "", "application/json", "UPSTREAM_UNAUTHORIZED"}, {429, "", "application/json", "UPSTREAM_RATE_LIMITED"}, {503, "", "application/json", "UPSTREAM_HTTP"}, {200, "<html>", "text/html", "INVALID_PAYLOAD"}, {200, strings.Repeat("x", 2*1024*1024+1), "application/json", "RESPONSE_TOO_LARGE"}} {
+	}{{401, "", "application/json", "UPSTREAM_UNAUTHORIZED"}, {403, "", "application/json", "UPSTREAM_UNAUTHORIZED"}, {429, "", "application/json", "UPSTREAM_RATE_LIMITED"}, {503, "", "application/json", "UPSTREAM_HTTP"}, {200, `{"code":20001,"msg":""}`, "application/json", "UPSTREAM_ACCESS_RESTRICTED"}, {200, `{"code":50001}`, "application/json", "UPSTREAM_REJECTED"}, {200, `{"code":200}`, "application/json", "INVALID_PAYLOAD"}, {200, "<html>", "text/html", "INVALID_PAYLOAD"}, {200, strings.Repeat("x", 2*1024*1024+1), "application/json", "RESPONSE_TOO_LARGE"}} {
 		t.Run(tc.code, func(t *testing.T) {
 			c := &Client{HTTP: &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
 				if r.URL.Host != "music.163.com" || r.Header.Get("Cookie") != "" {
