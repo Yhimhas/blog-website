@@ -7,6 +7,8 @@ import { FieldProvider } from "@field-lab/vue";
 
 import { pageLeaving, pageReady } from "./pageTransition";
 import EntryIntro from "./components/EntryIntro.vue";
+import { applySeo } from './pageSeo';
+import { routeSeo } from './seo';
 const route = useRoute();
 const paused = ref(false);
 const expanded = ref(false);
@@ -65,13 +67,10 @@ const active = computed(() =>
   route.path.startsWith("/blog") ? "/blog" : route.path.startsWith("/admin") ? "/admin" : route.path,
 );
 watch(
-  () => [route.fullPath, route.meta.title],
+  () => route.path,
   () => {
     expanded.value = false;
-    const title = route.path.startsWith("/blog/")
-      ? "文章"
-      : route.meta.title || "首页";
-    document.title = `${title} · Yhimhas / NOTES`;
+    applySeo(routeSeo(route.path));
   },
   { immediate: true },
 );

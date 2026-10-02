@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import SiteIcon from '../components/SiteIcon.vue'
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { blogApi, ApiError, type PostDetail } from '../blogApi'
 import { renderMarkdown } from '../markdown'
+import { applySeo } from '../pageSeo'
+import { articleSeo, routeSeo } from '../seo'
+const route = useRoute()
 const props = defineProps<{ id: string }>()
 const post = ref<PostDetail>()
 const loading = ref(true)
@@ -17,11 +20,17 @@ watch(() => [props.id, retry.value], async (_, __, cleanup) => {
   loading.value = true; post.value = undefined; error.value = ''; missing.value = false
   try {
     const result = await blogApi.post(props.id, controller.signal)
-    if (!controller.signal.aborted) { post.value = result; document.title = result.title + ' · Yhimhas / NOTES' }
+    if (!controller.signal.aborted) {
+      post.value = result
+      if (route.path === `/blog/${encodeURIComponent(props.id)}`) applySeo(articleSeo(result))
+    }
   } catch (e) {
     if (!controller.signal.aborted) {
       missing.value = e instanceof ApiError && e.status === 404
       error.value = e instanceof Error ? e.message : '文章加载失败。'
+      if (route.path === `/blog/${encodeURIComponent(props.id)}`) {
+        applySeo({ ...routeSeo(route.path), title: missing.value ? '文章不存在' : '文章暂时不可用', noindex: true })
+      }
     }
   } finally { if (!controller.signal.aborted) loading.value = false }
 }, { immediate: true })
