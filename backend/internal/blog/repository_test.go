@@ -44,3 +44,13 @@ func TestLiteralSearchEscapes(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+func TestTermValidation(t *testing.T) {
+	for _, term := range []Term{{Slug: "bad_slug", Name: "ok"}, {Slug: "valid", Name: " "}, {Slug: "valid", Name: strings.Repeat("中", 161)}, {Slug: "valid", Name: "bad\x00"}, {Slug: strings.Repeat("a", 101), Name: "ok"}} {
+		if ValidTerm(term) {
+			t.Errorf("invalid term accepted: %+v", term)
+		}
+	}
+	if !ValidTerm(Term{Slug: "go-1", Name: strings.Repeat("中", 160)}) {
+		t.Fatal("valid term rejected")
+	}
+}

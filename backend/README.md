@@ -11,7 +11,7 @@
 先安装 PostgreSQL，在本地建立专用 `blog_user` 角色及其拥有的 `blog` 数据库。不要复用生产库进行测试。`.env.example` 仅说明变量，程序不会自动加载 `.env`。
 
 ```powershell
-cd D:\blog-website\blog-website\backend
+cd backend
 go version
 # 输入自己本机的 PostgreSQL URL；密码不会回显或保存为命令历史字面值。
 $env:DATABASE_URL = Read-Host 'PostgreSQL URL' -MaskInput
@@ -31,7 +31,7 @@ go run ./cmd/api
 
 数据库 URL 示例结构为 `postgres://blog_user:<本地密码>@127.0.0.1:5432/blog?sslmode=disable`；密码中特殊字符须 URL 编码。生产必须设置 HTTPS `ALLOWED_ORIGIN`、`APP_ENV=production`，并开启 Secure Cookie；`sslmode=disable` 仅用于可信本地开发连接。Cookie 默认 24h，可设置 1m–720h。密码使用 bcrypt cost 12，数据库仅存密码哈希和随机 session token 的 SHA-256 哈希。
 
-迁移命令仅支持向前 `up`，不提供删除表、回滚或重置命令。迁移失败后先检查 `schema_migrations` 中的 version/dirty 和数据库错误，不自动 force。分类/标签目前通过本地参数化 SQL 或管理工具维护（id、slug、name），尚无对应写 API。
+迁移命令仅支持向前 `up`，不提供删除表、回滚或重置命令。迁移失败后先检查 `schema_migrations` 中的 version/dirty 和数据库错误，不自动 force。分类/标签可在 `/admin` 新增、编辑和删除；已被文章或修订引用的项目不能删除。
 
 数据库不可用时 `/health` 仍返回 200，`/ready` 返回 503；未迁移也不能 ready。业务接口返回统一 JSON 错误。服务不会记录 DSN、密码、Cookie 或上游原始响应。
 
@@ -58,6 +58,18 @@ Invoke-RestMethod "$base/posts/hello-backend"
 ```
 
 PATCH 必须提交 version；省略字段不变，`categoryId:null` 清空分类，`tagIds:[]` 清空标签，其他字段拒绝 null。slug 创建后不可修改。标题 1–160 个 Unicode 字符、摘要最多 500 字符、Markdown 最多 200 KiB UTF-8。发布要求正文非空白；归档后再次发布保留首次发布时间。所有状态修改递增 version，旧版本返回 409。
+
+### 日常管理与修订草稿
+
+部署此版本前，在 `backend` 目录执行 `go run ./cmd/manage migrate`，应用 `000005_post_revisions.up.sql`，然后更新后端和前端。迁移只新增修订表，不改写已有文章。未迁移时 `/ready` 返回 503。
+
+后台支持全部、草稿、已发布、已归档筛选。归档停止公开访问，保留文章和待发布修订；重新发布保留首次发布时间。存在未保存输入时须先保存再归档。
+
+已发布文章的 PATCH 只写入独立修订，公开标题、摘要、正文、分类、标签和更新时间不变。管理接口的顶层字段仍为原版本，`revision` 为待发布修订；编辑器优先加载修订。保存和发布共用文章 version，过期写入返回 409。确认发布时在一个事务中应用修订并清除待发布记录；发布失败时保留原公开内容和修订。归档后的修订继续保留并可编辑。这里的审核是管理员预览后手动确认发布，不涉及多角色审批。
+
+分类标签接口为 `POST /admin/categories`、`PUT/DELETE /admin/categories/{id}`，标签将 categories 替换为 tags。写入字段为 name、slug；需要管理员会话及 Origin/CSRF。名称与 slug 修改立即影响公开分类标签，旧 slug 筛选链接不自动重定向。引用保护覆盖草稿、公开文章、归档文章及待发布修订；删除仍被引用的项返回 `409 TERM_IN_USE`。
+
+新增数据库闭环测试：`go test ./internal/storage -run TestBlogManagement -v -count=1`。须先配置独立测试库 `TEST_DATABASE_URL` 和 `ALLOW_TEST_SCHEMA_CREATE=true`；测试保留隔离 schema 供检查。
 
 ## 音乐与任务
 

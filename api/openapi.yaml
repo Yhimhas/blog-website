@@ -1161,7 +1161,7 @@
       "patch": {
         "operationId": "patchPost",
         "summary": "patchPost",
-        "description": "省略字段保持不变；categoryId:null 清空分类，tagIds:[] 清空标签；其他字段不接受 null。version 原子递增；过期返回 409。slug 创建后不修改。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。",
+        "description": "省略字段保持不变；categoryId:null 清空分类，tagIds:[] 清空标签；其他字段不接受 null。version 原子递增；过期返回 409。slug 创建后不修改。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。 已发布文章或已有修订的文章：PATCH 写入独立 revision，并递增文章 version，保留公开正文、分类标签与 updatedAt。后续部分修改基于待发布修订。",
         "parameters": [
           {
             "name": "id",
@@ -1301,7 +1301,7 @@
       "post": {
         "operationId": "publishPost",
         "summary": "publishPost",
-        "description": "正文不能为空白；重复发布和归档后重新发布保留首次发布时间；每次成功 version 递增。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。",
+        "description": "正文不能为空白；重复发布和归档后重新发布保留首次发布时间；每次成功 version 递增。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。 存在 revision 时在同一事务内应用正文、摘要、分类及标签并清除待发布修订；空正文拒绝发布。",
         "parameters": [
           {
             "name": "id",
@@ -1441,7 +1441,7 @@
       "post": {
         "operationId": "archivePost",
         "summary": "archivePost",
-        "description": "归档后公开接口不可见，不删除记录。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。",
+        "description": "归档后公开接口不可见，不删除记录。 仅允许 role=admin 的已登录账号访问，普通用户返回 403 ADMIN_REQUIRED。 保留待发布修订，重新发布时应用该修订。",
         "parameters": [
           {
             "name": "id",
@@ -2499,12 +2499,40 @@
       "get": {
         "summary": "管理员播放聚合指标",
         "description": "只返回准备/首音频耗时累计、拒绝/失败计数、活动解析/流/转码数、输出字节和重新解析次数。没有账号标识、Cookie、凭据版本、会话 ID 或签名 URL。指标为实例级，配额与资源租约在 PostgreSQL 共享。",
-        "security": [{ "SessionCookie": [] }],
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
         "responses": {
-          "200": { "description": "聚合指标", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "additionalProperties": true } } } } } },
-          "401": { "description": "未登录" },
-          "403": { "description": "需要管理员角色" },
-          "503": { "description": "播放服务未启用" }
+          "200": {
+            "description": "聚合指标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "403": {
+            "description": "需要管理员角色"
+          },
+          "503": {
+            "description": "播放服务未启用"
+          }
         }
       }
     },
@@ -2727,6 +2755,728 @@
           },
           "503": {
             "description": "UPSTREAM_UNAVAILABLE, PLAYBACK_TIMEOUT, TRANSCODE_UNAVAILABLE or TRANSCODE_FAILED before media bytes; after response starts the connection ends and session state reports the error."
+          }
+        }
+      }
+    },
+    "/admin/categories": {
+      "post": {
+        "operationId": "postcategories",
+        "summary": "新增分类",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Term"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/categories/{id}": {
+      "put": {
+        "operationId": "putcategories",
+        "summary": "编辑分类",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Term"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletecategories",
+        "summary": "删除分类",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除，无响应体"
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tags": {
+      "post": {
+        "operationId": "posttags",
+        "summary": "新增标签",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Term"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tags/{id}": {
+      "put": {
+        "operationId": "puttags",
+        "summary": "编辑标签",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Term"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletetags",
+        "summary": "删除标签",
+        "description": "需要 admin 会话、Origin 和 CSRF。名称及 slug 修改立即生效。删除被文章（含草稿、归档）或修订引用的项返回 409 TERM_IN_USE。slug 重复返回 409。",
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须精确等于 ALLOWED_ORIGIN"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除，无响应体"
+          },
+          "400": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限或 Origin/CSRF 校验失败"
+          },
+          "404": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误，不输出 SQL、凭据或堆栈。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "统一错误；SQL、凭据与堆栈不返回。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3004,6 +3754,46 @@
             "type": "string",
             "format": "date-time",
             "description": "UTC RFC3339"
+          },
+          "revision": {
+            "type": "object",
+            "nullable": true,
+            "description": "独立待发布修订；保存不会改变顶层公开版本。发布成功后为 null。",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "contentMarkdown": {
+                "type": "string"
+              },
+              "categoryId": {
+                "type": "string",
+                "nullable": true
+              },
+              "tagIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC RFC3339"
+              }
+            },
+            "required": [
+              "title",
+              "summary",
+              "contentMarkdown",
+              "categoryId",
+              "tagIds",
+              "updatedAt"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -3018,7 +3808,8 @@
           "version",
           "publishedAt",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "revision"
         ],
         "additionalProperties": false
       },
@@ -3369,7 +4160,9 @@
           "capability"
         ],
         "properties": {
-          "capability": { "$ref": "#/components/schemas/PlaybackCapability" },
+          "capability": {
+            "$ref": "#/components/schemas/PlaybackCapability"
+          },
           "sessionId": {
             "type": "string"
           },
@@ -3417,13 +4210,62 @@
       "PlaybackCapability": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["mediaKind", "trackDurationSeconds", "streamDurationSeconds", "previewStartSeconds", "previewEndSeconds"],
+        "required": [
+          "mediaKind",
+          "trackDurationSeconds",
+          "streamDurationSeconds",
+          "previewStartSeconds",
+          "previewEndSeconds"
+        ],
         "properties": {
-          "mediaKind": { "type": "string", "enum": ["full", "preview", "unknown"] },
-          "trackDurationSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
-          "streamDurationSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
-          "previewStartSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
-          "previewEndSeconds": { "type": "integer", "nullable": true, "minimum": 0 }
+          "mediaKind": {
+            "type": "string",
+            "enum": [
+              "full",
+              "preview",
+              "unknown"
+            ]
+          },
+          "trackDurationSeconds": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          },
+          "streamDurationSeconds": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          },
+          "previewStartSeconds": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          },
+          "previewEndSeconds": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "TermInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "slug"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
         }
       }
     }

@@ -83,6 +83,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err = isolated.Exec(string(publicSQL)).Error; err != nil {
 		t.Fatal(err)
 	}
+	revisionSQL, err := migrations.Files.ReadFile("000005_post_revisions.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = isolated.Exec(string(revisionSQL)).Error; err != nil {
+		t.Fatal(err)
+	}
 	return isolated
 }
 func TestPostgresContracts(t *testing.T) {

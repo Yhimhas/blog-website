@@ -86,3 +86,42 @@ test('public rendering and preview escape HTML and reject executable links', () 
   assert.doesNotMatch(html, /<script|href="javascript:|src="data:text\/html/)
   assert.match(html, /&lt;script&gt;/)
 })
+
+test('admin archive filtering, revision save and term management preserve API contracts', async (t) => {
+  const patch = { title: '待审核', summary: '', contentMarkdown: '# 修订', categoryId: 'cat', tagIds: ['tag'] }
+  const revised = { id: 'post', title: '公开标题', status: 'published', version: 4, revision: patch }
+  const term = { id: 'a/b', name: '开发', slug: 'dev' }
+  const calls = [
+    ['/admin/posts?page=2&pageSize=20&status=archived', 'GET', undefined, []],
+    ['/admin/posts/post', 'PATCH', { ...patch, version: 3 }, revised],
+    ['/admin/posts/post/archive', 'POST', { version: 4 }, { ...revised, version: 5, status: 'archived' }],
+    ['/admin/posts/post/publish', 'POST', { version: 5 }, { ...revised, ...patch, version: 6, revision: null }],
+    ['/admin/categories', 'POST', { name: term.name, slug: term.slug }, term],
+    ['/admin/tags/a%2Fb', 'PUT', { name: term.name, slug: term.slug }, term],
+    ['/admin/tags/a%2Fb', 'DELETE', undefined, undefined],
+  ]
+  let index = 0
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const [path, method, body, data] = calls[index++]
+    assert.equal(url, `/api/v1${path}`)
+    assert.equal(options.method, method)
+    assert.deepEqual(options.body === undefined ? undefined : JSON.parse(options.body), body)
+    return data === undefined ? new Response(null, { status: 204 }) : Response.json({ data })
+  })
+  await blogApi.adminPosts(2, 'archived')
+  const saved = await blogApi.update('post', 3, patch)
+  assert.equal(saved.title, '公开标题')
+  assert.equal(saved.revision.title, '待审核')
+  const archived = await blogApi.archive('post', saved.version)
+  assert.equal(archived.revision.title, '待审核')
+  assert.equal((await blogApi.publish('post', archived.version)).revision, null)
+  await blogApi.saveTerm('categories', { name: term.name, slug: term.slug })
+  await blogApi.saveTerm('tags', { name: term.name, slug: term.slug }, term.id)
+  await blogApi.deleteTerm('tags', term.id)
+  assert.equal(index, calls.length)
+})
+
+test('referenced term deletion exposes actionable error', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ error: { code: 'TERM_IN_USE', message: '仍有文章使用此标签' } }, { status: 409 }))
+  await assert.rejects(blogApi.deleteTerm('tags', 'go'), e => e.status === 409 && e.code === 'TERM_IN_USE')
+})
