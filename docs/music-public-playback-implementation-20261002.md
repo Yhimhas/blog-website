@@ -12,15 +12,31 @@
 | D：账号接入 | [独立账号客户端](../backend/internal/music/provider/netease/account.go) 从私密文件读取 Cookie，限制大小、内容和权限；独立 HTTP Client，不使用 Cookie Jar、不跟随重定向、不继承环境代理。按凭据内容版本使旧账号会话失效，明确登录失效后停止重试该版本；连续拒绝触发冷却，账号请求预算可配置。 |
 | E：隔离验收 | 当前源码在独立测试 schema 中通过数据库集成和 race；独立官方 Nginx 容器代理当前 API，真实公开音源经过 Go→FFmpeg→MP3；浏览器观察到音乐页播放和完整性提示。生产 CDN/反代和真实会员账号不在已通过范围内。 |
 
+## 播放器体验边界
+
+初次验收后的同日补做已实现跨页面持续播放与进度定位；当前边界如下：
+
+| 项目 | 当前行为与验收结论 | 后续范围 |
+| --- | --- | --- |
+| 跨页面持续播放 | [App](../frontend/src/App.vue) 创建并提供应用级播放器；站内路由切换复用同一音频实例、队列、音量和播放状态。其他页面展示可暂停、停止和拖动的[迷你播放器](../frontend/src/components/MiniMusicPlayer.vue)，返回音乐页继续控制原播放器。 | 已补做并通过真实 RouterView 挂载/卸载回归；范围为同一标签页内的站内路由导航，不包括刷新、关闭标签页或跨标签页同步。 |
+| 拖动进度 | [进度控件](../frontend/src/components/MusicSeek.vue) 支持拖动和键盘定位，松开后提交；后端接收 startSeconds 并使用 FFmpeg 从对应时间输出新音频流。seekMode=restart 表示支持此方式，仍不使用 HTTP Range。 | 已补做并通过真实 FFmpeg 音频定位测试。需配置 FFmpeg 且有可用时长；试听位置相对试听片段，只能在片段内定位。定位会重新缓冲，保留原暂停状态和音量。 |
+| 歌单同步与完整播放 | ready / 267 首表示歌单同步结果，不代表全部歌曲均可播放或可完整播放。现有真实公开样本只证明观察时段内能播放，完整性仍为 unknown。 | 真实账号音源尚未实测；配置条件具备后进行受控抽样，分别记录可播性、试听信息与完整性证据，抽样结果不能外推至全部歌曲。 |
+
+定位前停止旧会话，新会话重新执行原有来源、权限、完整性及配额检查；快速切歌会串行释放和创建，过时响应不会替换当前播放器。每次定位计入现有会话创建配额（默认每访客/IP 各 10 次/分钟）。FFmpeg 从受控输入流解码并跳过前缀，不落盘缓存音源；远距离定位可能较慢，沿用 15 秒首音频超时。未知完整性音源可用曲目时长作为定位参考，但可能在目标位置前已结束，定位失败不代表完整音源可用。
+
+补做验证：前端音乐测试 70 项、type-check、内容检查及 development 模式构建通过；后端 `go test ./... -count=1`、`go vet ./...` 和 playback/platform 包的 `go test -race` 通过（本机未配置数据库，数据库集成不在此次验证范围）。新增回归覆盖站内路由切换、暂停后定位、向前/向后定位、音量保留、停止时的迟到响应、试听越界、无 FFmpeg/无时长拒绝，以及 HTTP→真实 FFmpeg→MP3 解码后的目标音频片段。正式 SEO 构建因本机未配置 VITE_SITE_URL、SEO_API_ORIGIN 未执行成功，已按项目要求使用 development 模式完成打包。未部署生产，未补做真实账号音源、生产反代或浏览器人工听验。
+
+补做保留产物：`frontend/dist/` 中的 development 构建及既有旧资源；复用 `../.validation-cache/go/` 和 `../.validation-cache/account-private-file-fixtures/`（假凭据），以及既有前端类型检查/Vite 缓存。音频测试在内存生成并解码，无新增音频文件；未删除任何文件。
+
 ## 完整性和来源规则
 
 公开 outer 解析器默认 unknown，曲目元数据时长只放在 trackDurationSeconds；没有实际流时长证据时 streamDurationSeconds 为 null。账号接口的 freeTrialInfo 起止值按毫秒转换为秒，明确标为 preview。缺失或 null 的试听字段也不直接证明 full。当前网易云解析器不会仅凭返回 URL 或 time 字段标记完整音源；full 模型留给有明确证据的可信解析器，并已完成模型和 UI 测试。
 
 public_only 为默认模式，保留既有公开来源路径，不调用账号客户端。配置 MUSIC_PUBLIC_GRANTS_FILE 后，public 来源也受逐曲清单限制；空清单不放行任何曲目。licensed 模式必须提供该文件，账号来源还必须匹配 sourceMode=account、audience=public 和未过期记录。账号能取到音源不自动形成公开授权。程序记录操作员填写的依据，不能自行证明其法律效力。
 
-前端只提交 trackId，不能自行填写 audience、mediaKind 或授权字段。公开 DTO 不包含 Cookie、账号标识、凭据版本、上游 URL 或内部判断依据。SOURCE_AUTH_EXPIRED 仅用于内部诊断和管理员聚合指标，公开映射为 UPSTREAM_UNAVAILABLE。HTTP 403/风控拒绝不会关闭凭据；音源接口的 401/301 也不单独作为账号失效证据，需账号状态接口提供明确结果。
+前端只提交 trackId 和可选 startSeconds，不能自行填写 audience、mediaKind 或授权字段。公开 DTO 不包含 Cookie、账号标识、凭据版本、上游 URL 或内部判断依据。SOURCE_AUTH_EXPIRED 仅用于内部诊断和管理员聚合指标，公开映射为 UPSTREAM_UNAVAILABLE。HTTP 403/风控拒绝不会关闭凭据；音源接口的 401/301 也不单独作为账号失效证据，需账号状态接口提供明确结果。
 
-短时音源访问拒绝时，输出音频前最多重新解析一次，并重新检查策略、完整性类型和凭据版本；重新解析也受解析并发及共享租约限制。已经开始输出后不拼接 JSON 或偷偷更换音源。继续保持 seekMode=none，不伪造 Range/206。
+短时音源访问拒绝时，输出音频前最多重新解析一次，并重新检查策略、完整性类型和凭据版本；重新解析也受解析并发及共享租约限制。已经开始输出后不拼接 JSON 或偷偷更换音源。补做后支持 seekMode=restart 的按秒重建流定位；不具备条件时仍为 none，不伪造 Range/206。
 
 ## 配置与迁移
 

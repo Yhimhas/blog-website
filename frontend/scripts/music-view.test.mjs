@@ -17,7 +17,7 @@ const track = { id: 'netease:33894312', provider: 'netease', title: '人工样�
 async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = null, manualTracks = [], targetTracks = [], query = '', platform = 'netease', tab = 'library', extraPlaylists = [], failLibrary = false, playbackCapability } = {}) {
   const playlists = [{ ...target, syncStatus: status, syncErrorCode, syncedAt }, manual, ...extraPlaylists]
   t.mock.method(globalThis, 'fetch', async url => {
-    if (url === '/api/v1/music/playback-sessions') return Response.json({data:{sessionId:'ui-fixture',status:'ready',streamUrl:'/api/v1/music/streams/ui-fixture',durationSeconds:200,capability:playbackCapability}})
+    if (url === '/api/v1/music/playback-sessions') return Response.json({data:{sessionId:'ui-fixture',status:'ready',streamUrl:'/api/v1/music/streams/ui-fixture',durationSeconds:200,seekMode:'restart',capability:playbackCapability}})
     if (url === '/api/v1/music/recommendations/today') return Response.json({ data: { date: '2026-09-30', timezone: 'Asia/Shanghai', status: 'ready', items: [] } })
     if (failLibrary) return new Response(null, { status: 503 })
     if (url === '/api/v1/music/playlists') return Response.json({ data: playlists })
@@ -52,6 +52,10 @@ test('actual player UI distinguishes full, preview and unknown capability', asyn
       const playbackCapability={mediaKind,trackDurationSeconds:200,streamDurationSeconds:mediaKind==='preview'?30:200,previewStartSeconds:mediaKind==='preview'?30:null,previewEndSeconds:mediaKind==='preview'?60:null}
       const html=await render(t,{manualTracks:[track],playbackCapability})
       assert.ok(html.includes(label))
+      const seek=html.match(/<input\b[^>]*aria-label="播放进度"[^>]*>/)?.[0]
+      assert.ok(seek, 'renders the shared seek control')
+      assert.doesNotMatch(seek,/\bdisabled\b/)
+      assert.match(seek, mediaKind==='preview' ? /max="29.9"/ : /max="199.9"/)
       if(mediaKind==='preview')assert.match(html,/0:30.*1:00/)
     })
   }

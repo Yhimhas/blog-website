@@ -1,26 +1,52 @@
-import { ref, onScopeDispose } from 'vue';
+import { ref, computed, onScopeDispose, inject, provide, getCurrentInstance } from 'vue';
+import type { InjectionKey } from 'vue';
 import { createPlayback, getPlayback, stopPlayback, playbackMessage, PlaybackError, unknownCapability } from './musicPlaybackApi.ts';
 import type { MusicTrack } from './musicLibraryApi.ts';
+const playerKey: InjectionKey<ReturnType<typeof createMusicPlayer>> = Symbol('music-player');
+export function provideMusicPlayer() {
+    const player = createMusicPlayer();
+    provide(playerKey, player);
+    return player;
+}
 export function useMusicPlayer() {
+    if (!getCurrentInstance()) return createMusicPlayer();
+    return inject(playerKey, undefined) ?? provideMusicPlayer();
+}
+export function createMusicPlayer() {
     const state = ref('idle'), message = ref('选择一首曲目开始播放。'), currentTime = ref(0), duration = ref(0), volume = ref(0.7), track = ref<MusicTrack>(), queue = ref<MusicTrack[]>([]);
     const capability = ref(unknownCapability()), errorCode = ref('');
-    let audio: HTMLAudioElement | undefined, session = '', generation = 0, controller: AbortController | undefined;
-    async function release() { controller?.abort(); controller = undefined; const old = audio; audio = undefined; if (old) {
+    const seekMode = ref('none');
+    const canSeek = computed(() => seekMode.value === 'restart' && duration.value > 0 && ['playing', 'paused', 'buffering', 'blocked'].includes(state.value));
+    let operations: Promise<void> = Promise.resolve();
+    let audio: HTMLAudioElement | undefined, session = '', generation = 0;
+    let releasing: Promise<void> = Promise.resolve();
+    async function release() { const old = audio; audio = undefined; if (old) {
         old.pause();
         old.removeAttribute('src');
         old.load();
     } ; const id = session; session = ''; if (id)
-        await stopPlayback(id); }
-    async function play(selected: MusicTrack, list: MusicTrack[]) {
+        releasing = Promise.all([releasing, stopPlayback(id)]).then(() => {});
+        await releasing; }
+    function play(selected: MusicTrack, list: MusicTrack[], startSeconds = 0, paused = false) {
         const g = ++generation;
+        audio?.pause();
         state.value = 'preparing';
-        message.value = '正在准备音频…';
+        message.value = startSeconds > 0 ? '正在跳转到指定位置…' : '正在准备音频…';
+        // Serialize release/create so rapid changes cannot leave an orphan session
+        // or race the previous stop against the server's one-session limit.
+        operations = operations.then(async () => {
+            if (g === generation) await startPlay(selected, list, startSeconds, paused, g);
+        });
+        return operations;
+    }
+    async function startPlay(selected: MusicTrack, list: MusicTrack[], startSeconds: number, paused: boolean, g: number) {
         track.value = selected;
         queue.value = [...list];
-        currentTime.value = 0;
+        currentTime.value = startSeconds;
         duration.value = 0;
         capability.value = unknownCapability();
         errorCode.value = '';
+        seekMode.value = 'none';
         await release();
         if (g !== generation)
             return;
@@ -30,11 +56,10 @@ export function useMusicPlayer() {
             return;
         }
         const c = new AbortController();
-        controller = c;
         try {
-            let s = await createPlayback(selected.id, c.signal);
+            let s = await createPlayback(selected.id, c.signal, startSeconds);
             if (g !== generation) {
-                void stopPlayback(s.sessionId);
+                await stopPlayback(s.sessionId);
                 return;
             }
             ;
@@ -53,15 +78,23 @@ export function useMusicPlayer() {
             if (s.status !== 'ready' || !s.streamUrl)
                 throw new PlaybackError(s.errorCode || 'UPSTREAM_UNAVAILABLE');
             capability.value = s.capability || unknownCapability();
+            seekMode.value = s.seekMode || 'none';
+            const offset = s.startSeconds ?? startSeconds;
             const a = new Audio();
             audio = a;
             a.preload = 'none';
             a.volume = volume.value;
             a.src = s.streamUrl;
-            duration.value = capability.value.streamDurationSeconds || 0;
+            const cap = capability.value;
+            const previewLength = cap.mediaKind === 'preview' ? (cap.previewEndSeconds ?? 0) - (cap.previewStartSeconds ?? 0) : 0;
+            const knownDuration = cap.mediaKind === 'preview' ? Math.min(cap.streamDurationSeconds ?? previewLength, previewLength) : cap.streamDurationSeconds;
+            const timelineDuration = knownDuration || cap.trackDurationSeconds || 0;
+            duration.value = timelineDuration;
             const live = () => g === generation && audio === a;
-            a.addEventListener('loadedmetadata', () => { if (live() && Number.isFinite(a.duration))
-                duration.value = a.duration; });
+            const updateDuration = () => { if (live() && !timelineDuration && Number.isFinite(a.duration) && a.duration > 0)
+                duration.value = offset + a.duration; };
+            a.addEventListener('loadedmetadata', updateDuration);
+            a.addEventListener('durationchange', updateDuration);
             a.addEventListener('playing', () => { if (live()) {
                 state.value = 'playing';
                 message.value = '正在播放';
@@ -75,7 +108,7 @@ export function useMusicPlayer() {
                 message.value = '已暂停';
             } });
             a.addEventListener('timeupdate', () => { if (live())
-                currentTime.value = a.currentTime; });
+                currentTime.value = offset + a.currentTime; });
             a.addEventListener('ended', () => { if (!live())
                 return;
                 if (capability.value.mediaKind === 'preview') {
@@ -92,7 +125,8 @@ export function useMusicPlayer() {
                 } }).catch(() => { });
                 void stopPlayback(id);
             } });
-            await resumeAudio(a, g);
+            if (paused) { state.value = 'paused'; message.value = '已定位，点击播放继续'; }
+            else await resumeAudio(a, g);
         }
         catch (e) {
             if (g !== generation)
@@ -151,6 +185,11 @@ export function useMusicPlayer() {
         void play(next, list); }
     function setVolume(v: number) { volume.value = Math.min(1, Math.max(0, v)); if (audio)
         audio.volume = volume.value; }
+    async function seek(seconds: number) {
+        if (!canSeek.value || !track.value || !Number.isFinite(seconds)) return;
+        const target = Math.max(0, Math.min(seconds, duration.value - 0.1));
+        await play(track.value, queue.value, target, state.value === 'paused' || state.value === 'blocked');
+    }
     onScopeDispose(stop);
-    return { state, message, currentTime, duration, volume, track, queue, capability, errorCode, play, toggle, stop, step, setVolume };
+    return { state, message, currentTime, duration, volume, track, queue, capability, errorCode, canSeek, play, toggle, stop, step, setVolume, seek };
 }

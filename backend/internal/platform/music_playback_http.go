@@ -15,6 +15,8 @@ const playbackCookie = "music_playback"
 
 func playbackStatus(e playback.Failure) int {
 	switch e {
+	case playback.InvalidSeek:
+		return 422
 	case playback.NotFound:
 		return 404
 	case playback.Unsupported, playback.SourceUnavailable:
@@ -55,7 +57,8 @@ func bindPlayback(v *gin.RouterGroup, p *playback.Service, cfg Config) {
 			return
 		}
 		var body struct {
-			TrackID string `json:"trackId"`
+			TrackID      string  `json:"trackId"`
+			StartSeconds float64 `json:"startSeconds"`
 		}
 		d := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1024))
 		d.DisallowUnknownFields()
@@ -69,7 +72,7 @@ func bindPlayback(v *gin.RouterGroup, p *playback.Service, cfg Config) {
 			http.SetCookie(c.Writer, &http.Cookie{Name: playbackCookie, Value: o, Path: "/api/v1/music", HttpOnly: true, Secure: cfg.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: 7 * 3600})
 		}
 		ip := cfg.MusicClientIP(c.Request)
-		out, err := p.Create(c.Request.Context(), o, ip, body.TrackID)
+		out, err := p.Create(c.Request.Context(), o, ip, body.TrackID, body.StartSeconds)
 		if err != nil {
 			code := playback.PublicCode(playback.Code(err))
 			apiFail(c, playbackStatus(code), string(code), "暂时无法播放此曲目")

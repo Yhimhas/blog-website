@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -47,10 +48,15 @@ func (t *transcodeStream) Close() error {
 	t.once.Do(func() { t.cancel(); _ = t.input.Close(); _ = t.File.Close(); <-t.done })
 	return nil
 }
-func (s *Service) transcode(ctx context.Context, input io.ReadCloser, format string) (*transcodeStream, error) {
+func (s *Service) transcode(ctx context.Context, input io.ReadCloser, format string, offsets ...float64) (*transcodeStream, error) {
 	args, err := ffmpegArgs(format)
 	if err != nil {
 		return nil, err
+	}
+	if len(offsets) > 0 && offsets[0] > 0 {
+		// Output seeking decodes and discards the prefix; input is a non-seekable
+		// pipe, so input -ss or byte Range would be incorrect.
+		args = append(args[:len(args)-1], "-ss", strconv.FormatFloat(offsets[0], 'f', 3, 64), "pipe:1")
 	}
 	if s.options.FFmpeg == "" {
 		return nil, TranscodeUnavailable

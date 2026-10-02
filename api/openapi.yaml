@@ -2554,6 +2554,13 @@
                   "trackId": {
                     "type": "string",
                     "maxLength": 150
+                  },
+                  "startSeconds": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 604800,
+                    "default": 0,
+                    "description": "Position relative to the available audio stream. Stop the old session before creating a replacement. Positive positions require seekMode=restart capability and must be below the available duration; preview positions are relative to the preview clip."
                   }
                 }
               }
@@ -2702,7 +2709,7 @@
     "/api/v1/music/streams/{id}": {
       "get": {
         "summary": "Same-domain audio stream routed to media listener",
-        "description": "Cookie required. A full 200 stream; Range ignored, no seek or media persistence. At most 4 streams, one per session. After headers, failures abort the connection; poll state for errorCode.",
+        "description": "Cookie required. A 200 stream beginning at the session startSeconds; Range ignored, no media persistence. Seek by stopping the old session and creating a replacement with startSeconds when seekMode=restart. At most 4 streams, one per session. After headers, failures abort the connection; poll state for errorCode.",
         "parameters": [
           {
             "name": "id",
@@ -2716,7 +2723,7 @@
         ],
         "responses": {
           "200": {
-            "description": "AAC/MP4 or MP3 passthrough; incompatible supported audio containers are converted to 128 kbps MP3 through a pipe. No-store and no seek.",
+            "description": "AAC/MP4 or MP3 passthrough; incompatible supported audio containers and nonzero startSeconds are converted to 128 kbps MP3 through a pipe. No-store; time positioning uses a new session, not HTTP Range.",
             "content": {
               "audio/mp4": {
                 "schema": {
@@ -4191,8 +4198,14 @@
           "seekMode": {
             "type": "string",
             "enum": [
-              "none"
+              "none",
+              "restart"
             ]
+          },
+          "startSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Stream timeline offset in seconds; add this to the audio element currentTime. HTTP Range is not used."
           },
           "expiresAt": {
             "type": "string",
