@@ -28,9 +28,9 @@ Cookie 为 HttpOnly，CSRF token 仅放内存。刷新恢复会话；401/CSRF �
 
 运行 `npm run test:blog` 和 `npm run build`（包含类型检查）。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染；不等于真实数据库或浏览器端到端验收。未配置数据库时 PostgreSQL 集成测试会 SKIP。
 
-生产环境将同域 `/api/` 代理到 Go，保留 Origin 和 Cookie；前端其他路径使用 SPA fallback 到 index.html，确保刷新 `/admin` 和 `/blog/<slug>` 可用。后端配置 HTTPS ALLOWED_ORIGIN、APP_ENV=production 和 Secure Cookie。Vite dev proxy 不随构建部署。
+生产环境将同域 `/api/` 代理到 Go，保留 Origin 和 Cookie；前端使用构建生成的页面 HTML，未知路径返回 404。正式构建需要 VITE_SITE_URL、SEO_API_ORIGIN 和新的输出目录，详细步骤见 [SEO 与链接分享](../docs/seo-and-sharing.md)。后端配置 HTTPS ALLOWED_ORIGIN、APP_ENV=production 和 Secure Cookie。Vite dev proxy 不随构建部署。
 
-构建已设置 `emptyOutDir: false`，保留旧 dist 输出；旧 hash 资源可能累积，发布时使用当前 index.html 引用的资源，清理须由站长确认。
+构建已设置 `emptyOutDir: false`，保留旧 dist 输出；正式发布切换整个新目录，防止旧文章 HTML 残留在公开目录。旧产物保留，清理须由站长确认。
 
 This template should help get you started developing with Vue 3 in Vite.
 
