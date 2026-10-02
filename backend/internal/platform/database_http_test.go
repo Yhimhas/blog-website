@@ -63,3 +63,35 @@ func TestAuthenticatedWriteRequiresOriginAndCSRF(t *testing.T) {
 		}
 	}
 }
+
+func TestBlogManagementRequiresSession(t *testing.T) {
+	handler := NewDatabaseHandler(nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	for _, kind := range []string{"categories", "tags"} {
+		for _, method := range []string{"POST", "PUT", "DELETE"} {
+			path := "/api/v1/admin/" + kind
+			if method != "POST" {
+				path += "/id"
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(`{"name":"name","slug":"slug"}`)))
+			if w.Code != 401 {
+				t.Fatalf("unguarded %s %s: %d", method, path, w.Code)
+			}
+		}
+	}
+}
+
+func TestTermInputRejectedBeforeDatabase(t *testing.T) {
+	a := databaseAPI{}
+	router := gin.New()
+	router.POST("/terms", func(c *gin.Context) { a.saveTerm(c, "tags", true) })
+	for _, body := range []string{`null`, `{}`, `{"name":null,"slug":"valid"}`, `{"name":"ok","slug":"bad_slug"}`, `{"name":"ok","slug":"valid","id":"injected"}`} {
+		r := httptest.NewRequest("POST", "/terms", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatalf("accepted invalid input %s: %d", body, w.Code)
+		}
+	}
+}

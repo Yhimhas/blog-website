@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, RouterLink, useRouter } from 'vue-router'
-import { ApiError, blogApi, type AdminPost, type PostInput, type Term } from '../blogApi'
+import { ApiError, blogApi, type AdminPost, type PostInput, type Term, type TermKind } from '../blogApi'
 import { renderMarkdown } from '../markdown'
 import { authSession } from '../authSession'
 
@@ -16,6 +16,7 @@ const posts = ref<AdminPost[]>([])
 const categories = ref<Term[]>([])
 const tags = ref<Term[]>([])
 const page = ref(1)
+const statusFilter = ref<AdminPost['status'] | ''>('')
 const total = ref(0)
 const selected = ref<AdminPost>()
 const editing = ref(false)
@@ -23,32 +24,50 @@ const blank = (): PostInput => ({ slug: '', title: '', summary: '', contentMarkd
 const form = reactive<PostInput>(blank())
 const snapshot = ref(JSON.stringify(form))
 const dirty = computed(() => editing.value && snapshot.value !== JSON.stringify(form))
+const termKind = ref<TermKind>('categories')
+const termPanel = ref<HTMLDetailsElement>()
+const termEditing = ref(false)
+const termId = ref<string>()
+const termForm = reactive({ name: '', slug: '' })
+const termSnapshot = ref(JSON.stringify(termForm))
+const termDirty = computed(() => termEditing.value && termSnapshot.value !== JSON.stringify(termForm))
+const termItems = computed(() => termKind.value === 'categories' ? categories.value : tags.value)
+const termLabel = computed(() => termKind.value === 'categories' ? '分类' : '标签')
 const preview = computed(() => renderMarkdown(form.contentMarkdown))
 const statusNames = { draft: '草稿', published: '已发布', archived: '已归档' }
-const allowedToLeave = () => !busy.value && (!dirty.value || window.confirm('有尚未保存的修改，确定离开当前文章吗？'))
+const allowedToLeave = () => !busy.value && (!(dirty.value || termDirty.value) || window.confirm('有尚未保存的文章或分类标签修改，确定离开吗？'))
 onBeforeRouteLeave(allowedToLeave)
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (dirty.value || busy.value) { event.preventDefault(); event.returnValue = '' }
+  if (dirty.value || termDirty.value || busy.value) { event.preventDefault(); event.returnValue = '' }
 }
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void restore() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
-function handleError(e: unknown) {
+function handleError(e: unknown, scope: 'post' | 'term' = 'post') {
   if (e instanceof ApiError && (e.status === 401 || e.code === 'CSRF_FAILED' || e.code === 'ADMIN_REQUIRED')) {
     authenticated.value = false
     authSession.user.value = null
     error.value = '会话已过期，请重新登录。当前编辑内容仍保留在此页面。'
   } else if (e instanceof ApiError && e.status === 409) {
-    conflict.value = true
-    error.value = selected.value ? '文章已被其他会话修改。当前输入已保留，请对照服务器版本后重新编辑。' : '这个 slug 已被使用，请修改后重试。'
+    if (scope === 'term') {
+      error.value = e.code === 'TERM_IN_USE' ? e.message : '这个分类或标签 slug 已被使用，请修改后重试。'
+    } else {
+      conflict.value = !!selected.value
+      error.value = selected.value ? '文章已被其他会话修改。当前输入已保留，请对照服务器版本后重新编辑。' : '这个 slug 已被使用，请修改后重试。'
+    }
   } else { error.value = e instanceof Error ? e.message : '操作失败，请重试。' }
 }
-async function run(action: () => Promise<void>) {
+async function run(action: () => Promise<void>, scope: 'post' | 'term' = 'post') {
   if (busy.value) return
   busy.value = true; error.value = ''; notice.value = ''
-  try { await action() } catch (e) { handleError(e) } finally { busy.value = false }
+  try { await action() } catch (e) { handleError(e, scope) } finally { busy.value = false }
 }
 async function refreshList() {
-  const result = await blogApi.adminPosts(page.value)
+  let result = await blogApi.adminPosts(page.value, statusFilter.value)
+  const lastPage = Math.max(1, Math.ceil(result.pagination.total / 20))
+  if (page.value > lastPage) {
+    page.value = lastPage
+    result = await blogApi.adminPosts(page.value, statusFilter.value)
+  }
   posts.value = result.data; total.value = result.pagination.total
 }
 async function loadWorkspace() {
@@ -64,9 +83,10 @@ async function restore() {
 }
 function fill(post?: AdminPost) {
   selected.value = post
+  const content = post?.revision ?? post
   Object.assign(form, post ? {
-    slug: post.slug, title: post.title, summary: post.summary, contentMarkdown: post.contentMarkdown,
-    categoryId: post.categoryId, tagIds: [...post.tagIds],
+    slug: post.slug, title: content!.title, summary: content!.summary, contentMarkdown: content!.contentMarkdown,
+    categoryId: content!.categoryId, tagIds: [...content!.tagIds],
   } : blank())
   snapshot.value = JSON.stringify(form); editing.value = true; conflict.value = false
 }
@@ -84,6 +104,7 @@ async function reload() {
   await run(async () => fill(await blogApi.adminPost(id)))
 }
 async function save(publish = false) {
+  if (publish && !window.confirm('确认发布当前编辑内容？正文、摘要、分类和标签将公开可见。')) return
   await run(async () => {
     if (!form.title.trim() || [...form.title].length > 160 || [...form.summary].length > 500 ||
       !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(form.slug) || form.slug.length > 100 ||
@@ -95,7 +116,7 @@ async function save(publish = false) {
       const { slug, ...input } = { ...form, tagIds: [...form.tagIds] }
       result = result ? await blogApi.update(result.id, result.version, input) : await blogApi.create({ ...input, slug })
       fill(result)
-      notice.value = '文章已保存。'
+      notice.value = result.revision ? '修订草稿已保存，公开内容未改变。审核预览后可确认发布。' : '文章已保存。'
     }
     if (publish) {
       result = await blogApi.publish(result.id, result.version)
@@ -105,10 +126,65 @@ async function save(publish = false) {
     await refreshList()
   })
 }
+async function archive() {
+  const post = selected.value
+  if (!post || busy.value || dirty.value || conflict.value) return
+  if (!window.confirm('确认归档这篇文章？归档后无法公开访问，内容和修订草稿将保留，可再次发布。')) return
+  await run(async () => {
+    fill(await blogApi.archive(post.id, post.version))
+    notice.value = '文章已归档，已停止公开访问。'
+    await refreshList()
+  })
+}
+async function filterPosts(event: Event) {
+  const value = (event.target as HTMLSelectElement).value as typeof statusFilter.value
+  await run(async () => { statusFilter.value = value; page.value = 1; await refreshList() })
+}
+function editTerm(term?: Term, kind = termKind.value) {
+  if (busy.value || (termDirty.value && !window.confirm('分类标签有未保存的修改，确定放弃这些修改吗？'))) return
+  termKind.value = kind; termId.value = term?.id
+  Object.assign(termForm, { name: term?.name ?? '', slug: term?.slug ?? '' })
+  termSnapshot.value = JSON.stringify(termForm); termEditing.value = true
+}
+function openTermManager() {
+  if (!termPanel.value) return
+  termPanel.value.open = true
+  termPanel.value.scrollIntoView({ block: 'start' })
+  termPanel.value.querySelector('summary')?.focus()
+}
+async function saveTerm() {
+  await run(async () => {
+    const term = await blogApi.saveTerm(termKind.value, { name: termForm.name.trim(), slug: termForm.slug }, termId.value)
+    termId.value = term.id; Object.assign(termForm, { name: term.name, slug: term.slug })
+    termSnapshot.value = JSON.stringify(termForm)
+    notice.value = `${termLabel.value}已保存。`
+    await loadWorkspace()
+  }, 'term')
+}
+async function deleteTerm(term: Term) {
+  if (busy.value) return
+  if (editing.value && (termKind.value === 'categories' ? form.categoryId === term.id : form.tagIds.includes(term.id))) {
+    error.value = '当前编辑内容正在使用此项，请先解除关联并保存文章。'; return
+  }
+  if (termEditing.value && termId.value === term.id && termDirty.value) {
+    error.value = '此项有未保存的修改，请先保存或取消编辑。'; return
+  }
+  if (!window.confirm(`确认删除${termLabel.value}「${term.name}」？被文章或修订草稿使用的项目不能删除。`)) return
+  await run(async () => {
+    await blogApi.deleteTerm(termKind.value, term.id)
+    if (termId.value === term.id) { termEditing.value = false; termId.value = undefined }
+    notice.value = `${termLabel.value}已删除。`
+    await loadWorkspace()
+  }, 'term')
+}
+function cancelTerm() {
+  if (termDirty.value && !window.confirm('确定放弃尚未保存的分类标签修改吗？')) return
+  termEditing.value = false
+}
 async function changePage(value: number) { await run(async () => { page.value = value; await refreshList() }) }
 async function logout() {
   if (!allowedToLeave()) return
-  await run(async () => { await authSession.logout(); authenticated.value = false; editing.value = false; selected.value = undefined; Object.assign(form, blank()); posts.value = [] })
+  await run(async () => { await authSession.logout(); authenticated.value = false; editing.value = false; termEditing.value = false; selected.value = undefined; Object.assign(form, blank()); posts.value = [] })
   if (!authenticated.value) await router.replace('/login')
 }
 </script>
@@ -122,32 +198,51 @@ async function logout() {
     <p v-if="notice" role="status">{{ notice }}</p>
     <p v-if="!checking && !authenticated"><RouterLink to="/login?next=/admin">前往用户登录</RouterLink></p>
     <template v-if="!checking && authenticated">
-      <div class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
+      <div class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button @click="openTermManager">分类与标签管理</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
       <div class="admin-layout">
         <aside aria-label="管理文章列表">
-          <p v-if="!posts.length">暂无文章，点击「新建文章」开始。</p>
+          <label>文章状态<select :value="statusFilter" :disabled="busy" @change="filterPosts"><option value="">全部文章</option><option value="draft">草稿</option><option value="published">已发布</option><option value="archived">已归档</option></select></label>
+          <p>共 {{ total }} 篇</p>
+          <p v-if="!posts.length">当前状态暂无文章。</p>
           <button v-for="post in posts" :key="post.id" class="admin-post" :class="{ selected: selected?.id === post.id }" :disabled="busy" @click="open(post)">
-            <strong>{{ post.title }}</strong><span>{{ statusNames[post.status] }} · v{{ post.version }}</span>
+            <strong>{{ post.revision?.title ?? post.title }}</strong><span>{{ statusNames[post.status] }}{{ post.revision ? ' · 有待发布修订' : '' }} · v{{ post.version }}</span>
           </button>
           <nav v-if="total > 20" class="admin-actions" aria-label="管理文章分页"><button :disabled="busy || page <= 1" @click="changePage(page - 1)">上一页</button><span>{{ page }} / {{ Math.ceil(total / 20) }}</span><button :disabled="busy || page * 20 >= total" @click="changePage(page + 1)">下一页</button></nav>
         </aside>
         <form v-if="editing" @submit.prevent="save()">
           <fieldset :disabled="busy">
             <legend>{{ selected ? statusNames[selected.status] : '新草稿' }}{{ dirty ? ' · 未保存' : '' }}</legend>
-            <p v-if="selected?.status === 'published'">这篇文章已公开，保存修改会立即更新公开内容。</p>
+            <p v-if="selected?.status === 'published'">这篇文章已公开。保存仅更新修订草稿；审核预览并确认发布后，公开内容才会更新。</p>
+            <p v-if="selected?.revision" role="status">正在编辑待发布修订 · 最近保存 {{ new Date(selected.revision.updatedAt).toLocaleString('zh-CN') }}</p>
+            <p v-if="selected?.status === 'archived'">这篇文章已归档，不可公开访问。确认发布后可恢复访问。</p>
             <label>标题<input v-model="form.title" required maxlength="160" /></label>
             <label>slug · 公开地址<input v-model="form.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" :readonly="!!selected" placeholder="my-first-post" /><small>仅小写英文、数字和连字符；创建后不可修改。</small></label>
             <label>摘要<textarea v-model="form.summary" maxlength="500" rows="3" /></label>
             <label>分类<select v-model="form.categoryId"><option :value="null">未分类</option><option v-for="term in categories" :key="term.id" :value="term.id">{{ term.name }}</option></select></label>
             <div class="admin-tags"><span>标签</span><label v-for="tag in tags" :key="tag.id"><input v-model="form.tagIds" type="checkbox" :value="tag.id" />{{ tag.name }}</label><small v-if="!tags.length">暂无标签，可直接保存和发布。</small></div>
             <label>Markdown 正文<textarea v-model="form.contentMarkdown" rows="18" class="admin-markdown" spellcheck="false" /></label>
-            <div class="admin-actions"><button type="submit" :disabled="conflict && !!selected">{{ busy ? '处理中…' : '保存文章' }}</button><button type="button" :disabled="conflict && !!selected" @click="save(true)">{{ selected?.status === 'published' ? '保存并更新发布' : '保存并发布' }}</button><button v-if="conflict && selected" type="button" @click="reload">重新读取服务器版本</button></div>
+            <div class="admin-actions"><button type="submit" :disabled="conflict && !!selected">{{ busy ? '处理中…' : selected?.status === 'published' || selected?.revision ? '保存修订草稿' : '保存文章' }}</button><button type="button" :disabled="conflict && !!selected" @click="save(true)">{{ selected?.status === 'archived' ? '确认重新发布' : '确认发布' }}</button><button v-if="selected && selected.status !== 'archived'" type="button" :disabled="dirty || conflict" @click="archive">归档文章</button><button v-if="conflict && selected" type="button" @click="reload">重新读取服务器版本</button></div>
+            <small v-if="selected && dirty">归档前请先保存当前修改。</small>
             <RouterLink v-if="selected?.status === 'published'" :to="`/blog/${selected.slug}`">公开访问：/blog/{{ selected.slug }} ↗</RouterLink>
           </fieldset>
           <details open><summary>正文预览</summary><div class="markdown-body admin-preview" v-html="preview" /></details>
         </form>
         <p v-else>选择文章继续编辑，或新建一篇草稿。</p>
       </div>
+      <details ref="termPanel" class="term-manager">
+        <summary>分类与标签管理 · {{ categories.length }} 个分类 / {{ tags.length }} 个标签</summary>
+        <p>名称和 slug 的修改会立即影响公开分类标签；修改 slug 后原筛选链接将不再匹配。已被文章或修订草稿使用的项目不能删除。</p>
+        <div class="admin-actions"><button :disabled="busy" :aria-pressed="termKind === 'categories'" @click="editTerm(undefined, 'categories')">管理分类</button><button :disabled="busy" :aria-pressed="termKind === 'tags'" @click="editTerm(undefined, 'tags')">管理标签</button><button :disabled="busy" @click="editTerm()">新增{{ termLabel }}</button></div>
+        <ul class="term-list"><li v-for="term in termItems" :key="term.id"><span><strong>{{ term.name }}</strong> <small>{{ term.slug }}</small></span><button :disabled="busy" @click="editTerm(term)">编辑</button><button :disabled="busy" @click="deleteTerm(term)">删除</button></li></ul>
+        <p v-if="!termItems.length">暂无{{ termLabel }}。</p>
+        <form v-if="termEditing" @submit.prevent="saveTerm">
+          <fieldset :disabled="busy"><legend>{{ termId ? '编辑' : '新增' }}{{ termLabel }}{{ termDirty ? ' · 未保存' : '' }}</legend>
+            <label>名称<input v-model="termForm.name" required maxlength="160" /></label>
+            <label>slug<input v-model="termForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="development" /></label>
+            <div class="admin-actions"><button type="submit">保存{{ termLabel }}</button><button type="button" @click="cancelTerm">取消编辑</button></div>
+          </fieldset>
+        </form>
+      </details>
     </template>
   </section>
 </template>
@@ -172,5 +267,11 @@ async function logout() {
 .admin-markdown { font-family: monospace !important; resize: vertical; }
 .admin-preview { padding: 24px 0; overflow-wrap: anywhere; }
 details { margin-top: 24px; }
+.term-manager { border-top: 1px solid #777; padding-top: 24px; }
+.term-manager summary { cursor: pointer; font-weight: bold; }
+.term-list { list-style: none; padding: 0; }
+.term-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #aaa; }
+.term-list span { flex: 1; min-width: 150px; overflow-wrap: anywhere; }
+.term-manager form { max-width: 600px; margin-top: 24px; }
 @media (max-width: 760px) { .admin-layout { grid-template-columns: 1fr; } }
 </style>

@@ -1,4 +1,5 @@
 export interface Term { id: string; slug: string; name: string }
+export type TermKind = 'categories' | 'tags'
 export interface SessionUser { id: string; username: string; role: 'user' | 'admin' }
 export interface PublicPost {
   id: string; slug: string; title: string; summary: string
@@ -12,6 +13,7 @@ export interface PostInput {
 export interface AdminPost extends PostInput {
   id: string; status: 'draft' | 'published' | 'archived'; version: number
   publishedAt: string | null; createdAt: string; updatedAt: string
+  revision: (Omit<PostInput, 'slug'> & { updatedAt: string }) | null
 }
 export interface Page<T> { data: T[]; pagination: { page: number; pageSize: number; total: number } }
 export class ApiError extends Error {
@@ -60,11 +62,16 @@ export const blogApi = {
     return this.session()
   },
   async logout() { await request('/session/logout', 'POST', {}); csrf = '' },
-  adminPosts: (page: number) => request<Page<AdminPost>>(`/admin/posts?page=${page}&pageSize=20`),
+  adminPosts: (page: number, status: AdminPost['status'] | '' = '') => request<Page<AdminPost>>(`/admin/posts?page=${page}&pageSize=20${status ? `&status=${status}` : ''}`),
+  saveTerm: async (kind: TermKind, input: Omit<Term, 'id'>, id?: string) =>
+    (await request<{ data: Term }>(`/admin/${kind}${id ? `/${encodeURIComponent(id)}` : ''}`, id ? 'PUT' : 'POST', input)).data,
+  deleteTerm: (kind: TermKind, id: string) => request<void>(`/admin/${kind}/${encodeURIComponent(id)}`, 'DELETE'),
   adminPost: async (id: string) => (await request<{ data: AdminPost }>(`/admin/posts/${encodeURIComponent(id)}`)).data,
   create: async (input: PostInput) => (await request<{ data: AdminPost }>('/admin/posts', 'POST', input)).data,
   update: async (id: string, version: number, input: Omit<PostInput, 'slug'>) =>
     (await request<{ data: AdminPost }>(`/admin/posts/${encodeURIComponent(id)}`, 'PATCH', { ...input, version })).data,
   publish: async (id: string, version: number) =>
     (await request<{ data: AdminPost }>(`/admin/posts/${encodeURIComponent(id)}/publish`, 'POST', { version })).data,
+  archive: async (id: string, version: number) =>
+    (await request<{ data: AdminPost }>(`/admin/posts/${encodeURIComponent(id)}/archive`, 'POST', { version })).data,
 }

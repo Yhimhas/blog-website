@@ -158,6 +158,15 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		})
 	}
 	admin := v.Group("/admin", a.requireSession, a.requireAdmin)
+	for _, table := range []string{"categories", "tags"} {
+		admin.POST("/"+table, a.requireWrite, func(c *gin.Context) { a.saveTerm(c, table, true) })
+		admin.PUT("/"+table+"/:id", a.requireWrite, func(c *gin.Context) { a.saveTerm(c, table, false) })
+		admin.DELETE("/"+table+"/:id", a.requireWrite, func(c *gin.Context) {
+			if !handleError(c, a.posts.DeleteTerm(c.Request.Context(), table, c.Param("id")), "TERM_NOT_FOUND") {
+				c.Status(204)
+			}
+		})
+	}
 	admin.GET("/music/playback-metrics", func(c *gin.Context) {
 		if player == nil {
 			apiFail(c, 503, "PLAYBACK_DISABLED", "播放服务未启用")
@@ -232,6 +241,8 @@ func handleError(c *gin.Context, err error, missing string) bool {
 		unavailable = unavailable || strings.HasPrefix(code, "08") || strings.HasPrefix(code, "53") || strings.HasPrefix(code, "57") || code == "42P01"
 	}
 	switch {
+	case errors.Is(err, blog.ErrTermInUse):
+		apiFail(c, 409, "TERM_IN_USE", "仍有文章使用此分类或标签，请先解除关联（包括草稿和已归档文章）")
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		apiFail(c, 404, missing, "资源不存在")
 	case errors.Is(err, auth.ErrUnauthorized):
@@ -423,6 +434,23 @@ func (a *databaseAPI) createPost(c *gin.Context) {
 		return
 	}
 	data(c, 201, p)
+}
+func (a *databaseAPI) saveTerm(c *gin.Context, table string, create bool) {
+	var input struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	}
+	if !decode(c, &input) {
+		return
+	}
+	id, status := c.Param("id"), http.StatusOK
+	if create {
+		id, status = auth.Token(), http.StatusCreated
+	}
+	term, err := a.posts.SaveTerm(c.Request.Context(), table, blog.Term{ID: id, Slug: input.Slug, Name: input.Name}, create)
+	if !handleError(c, err, "TERM_NOT_FOUND") {
+		data(c, status, term)
+	}
 }
 func (a *databaseAPI) changePost(c *gin.Context, action string) {
 	var fields map[string]json.RawMessage

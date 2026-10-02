@@ -29,6 +29,7 @@ type Record struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 	TagIDs          []string   `json:"tagIds" gorm:"-"`
+	Revision        *Revision  `json:"revision" gorm:"-"`
 }
 
 func (Record) TableName() string { return "posts" }
@@ -128,6 +129,9 @@ func (r Repository) Get(ctx context.Context, id string) (Record, error) {
 	}
 	p.TagIDs = []string{}
 	err = r.DB.WithContext(ctx).Table("post_tags").Where("post_id=?", id).Order("tag_id").Pluck("tag_id", &p.TagIDs).Error
+	if err == nil {
+		p.Revision, err = readRevision(r.DB.WithContext(ctx), id)
+	}
 	return p, err
 }
 func (r Repository) ListAdmin(ctx context.Context, page, size int, status string) ([]Record, int64, error) {
@@ -241,10 +245,26 @@ func (r Repository) Change(ctx context.Context, id string, version int64, action
 		}
 		switch action {
 		case "patch":
+			if p.Status == "published" || p.Revision != nil {
+				applyRevision(&p)
+				if err := ApplyPatch(&p, fields); err != nil {
+					return err
+				}
+				if err := saveRevision(tx, p); err != nil {
+					return err
+				}
+				// Saving a revision must not change the public article or its timestamp.
+				if err := tx.Model(&Record{}).Where("id=?", id).UpdateColumn("version", p.Version+1).Error; err != nil {
+					return err
+				}
+				result, err = repo.Get(ctx, id)
+				return err
+			}
 			if err := ApplyPatch(&p, fields); err != nil {
 				return err
 			}
 		case "publish":
+			applyRevision(&p)
 			if !ValidRecord(p) || strings.TrimSpace(p.ContentMarkdown) == "" {
 				return ErrInvalid
 			}
@@ -264,10 +284,16 @@ func (r Repository) Change(ctx context.Context, id string, version int64, action
 		if err := tx.Save(&p).Error; err != nil {
 			return err
 		}
-		if action == "patch" {
+		if action == "patch" || action == "publish" {
 			if err := setTags(tx, p); err != nil {
 				return err
 			}
+		}
+		if action == "publish" && p.Revision != nil {
+			if err := clearRevision(tx, id); err != nil {
+				return err
+			}
+			p.Revision = nil
 		}
 		result = p
 		return nil
