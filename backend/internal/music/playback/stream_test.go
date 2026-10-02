@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,6 +31,56 @@ func (b *waitingBody) Read(p []byte) (int, error) {
 	return 0, b.ctx.Err()
 }
 func (b *waitingBody) Close() error { return nil }
+
+func TestMediaCookieIsolationAndByteBudget(t *testing.T) {
+	s := New(context.Background(), audioResolver{audio: Audio{URL: "https://cdn.music.126.net/test", MIME: "audio/mp4", Headers: map[string]string{"Cookie": "PRIVATE_COOKIE", "Authorization": "PRIVATE_AUTH"}}}, fakeStore{}, Options{MaxStreamBytes: 20})
+	defer s.Close()
+	jar, _ := cookiejar.New(nil)
+	u, _ := url.Parse("https://cdn.music.126.net/")
+	jar.SetCookies(u, []*http.Cookie{{Name: "account_cookie", Value: "PRIVATE_JAR"}})
+	s.client = &http.Client{Jar: jar, Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" {
+			t.Fatal("CDN received account or visitor credentials")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"audio/mp4"}}, Body: io.NopCloser(strings.NewReader("\x00\x00\x00\x18ftypisom" + strings.Repeat("a", 100)))}, nil
+	})}
+	v, _ := s.Create(context.Background(), "owner", "ip", "track")
+	ready(t, s, v.ID, "owner")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Stream(w, r, v.ID, "owner", func(status int, code Failure) { http.Error(w, string(code), status) })
+	}))
+	defer server.Close()
+	response, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 503 {
+		t.Fatal("over-budget media started", response.StatusCode)
+	}
+	view, _ := s.Get(v.ID, "owner")
+	if view.Error != BudgetExceeded {
+		t.Fatal("byte ceiling classification lost", view)
+	}
+}
+
+func TestSignedURLRefreshIsBounded(t *testing.T) {
+	resolverCalls := 0
+	requests := 0
+	s := New(context.Background(), audioResolver{audio: Audio{URL: "https://cdn.music.126.net/test", MIME: "audio/mp4"}, calls: &resolverCalls}, fakeStore{})
+	defer s.Close()
+	s.client = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{StatusCode: 403, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("denied"))}, nil
+	})}
+	v, _ := s.Create(context.Background(), "owner", "ip", "track")
+	ready(t, s, v.ID, "owner")
+	w := httptest.NewRecorder()
+	s.Stream(w, httptest.NewRequest("GET", "/", nil), v.ID, "owner", func(status int, code Failure) { http.Error(w, string(code), status) })
+	if requests != 2 || resolverCalls != 2 || w.Code < 400 {
+		t.Fatal("URL refresh was unbounded or bypassed policy", requests, resolverCalls, w.Code)
+	}
+}
 func TestStreamFailureBeforeHeaders(t *testing.T) {
 	for _, status := range []int{403, 429, 200} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

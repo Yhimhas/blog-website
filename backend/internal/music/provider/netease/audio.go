@@ -94,5 +94,5 @@ func (r *AudioResolver) Resolve(ctx context.Context, t provider.Track) (playback
 	if resp.Request == nil || !officialAudioHost(resp.Request.URL.Hostname()) || !playback.MediaURL(resp.Request.URL.String()) {
 		return playback.Audio{}, playback.Unsupported
 	}
-	return playback.Audio{URL: resp.Request.URL.String(), MIME: playback.FormatMIME(format), InputFormat: format, Transcode: format != "mp3", RedirectPolicy: audioRedirect, Duration: t.DurationSeconds, Headers: map[string]string{"User-Agent": audioUserAgent, "Referer": audioReferer}}, nil
+	return playback.Audio{URL: resp.Request.URL.String(), MIME: playback.FormatMIME(format), InputFormat: format, Transcode: format != "mp3", RedirectPolicy: audioRedirect, Capability: playback.Capability{MediaKind: "unknown", TrackDuration: t.DurationSeconds}, Headers: map[string]string{"User-Agent": audioUserAgent, "Referer": audioReferer}}, nil
 }

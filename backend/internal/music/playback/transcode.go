@@ -1,11 +1,13 @@
 package playback
 
 import (
+	"blog-website/backend/internal/auth"
 	"context"
 	"io"
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 // FFmpeg receives bytes only, with pipe as its sole allowed protocol. The
@@ -59,6 +61,15 @@ func (s *Service) transcode(ctx context.Context, input io.ReadCloser, format str
 		return nil, Busy
 	}
 	release := func() { <-s.transcoders }
+	leaseID := auth.Token()
+	if s.options.Control != nil {
+		if err := s.options.Control.Lease(ctx, "transcoding", leaseID, "", s.options.MaxTranscoders, s.options.MaxStreamDuration+time.Minute); err != nil {
+			release()
+			return nil, Busy
+		}
+		localRelease := release
+		release = func() { localRelease(); s.releaseLease("transcoding", leaseID) }
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	output, writer, err := os.Pipe()
 	if err != nil {

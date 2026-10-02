@@ -76,6 +76,13 @@ func testDB(t *testing.T) *gorm.DB {
 	if err = isolated.Exec(string(playbackSQL)).Error; err != nil {
 		t.Fatal(err)
 	}
+	publicSQL, err := migrations.Files.ReadFile("000004_music_public_playback.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = isolated.Exec(string(publicSQL)).Error; err != nil {
+		t.Fatal(err)
+	}
 	return isolated
 }
 func TestPostgresContracts(t *testing.T) {

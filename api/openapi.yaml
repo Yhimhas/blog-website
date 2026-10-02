@@ -2495,10 +2495,23 @@
         }
       }
     },
+    "/api/v1/admin/music/playback-metrics": {
+      "get": {
+        "summary": "管理员播放聚合指标",
+        "description": "只返回准备/首音频耗时累计、拒绝/失败计数、活动解析/流/转码数、输出字节和重新解析次数。没有账号标识、Cookie、凭据版本、会话 ID 或签名 URL。指标为实例级，配额与资源租约在 PostgreSQL 共享。",
+        "security": [{ "SessionCookie": [] }],
+        "responses": {
+          "200": { "description": "聚合指标", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "additionalProperties": true } } } } } },
+          "401": { "description": "未登录" },
+          "403": { "description": "需要管理员角色" },
+          "503": { "description": "播放服务未启用" }
+        }
+      }
+    },
     "/api/v1/music/playback-sessions": {
       "post": {
         "summary": "Create an anonymous cookie-bound Bilibili P1 or NetEase audio session",
-        "description": "Same-origin Origin required. Library track IDs only. NetEase uses the official public outer link without account cookies; an upstream denial is not playable. Limited to 10 creates per visitor/IP/minute, 2 resolvers, 2 FFmpeg workers and 128 retained sessions. Disabled by default.",
+        "description": "同源 Origin 和库内 trackId。默认 public_only，账号 fallback 需 licensed 策略及操作员的逐曲公开授权记录。ready 前检查 audience、完整性要求和凭据版本。capability 区分 full/preview/unknown；音频头或曲目时长不证明完整。限流、并发和输出预算可配置，生产 PostgreSQL 共享配额，可信代理由 MUSIC_TRUSTED_PROXIES 明确配置。默认关闭站内播放。",
         "requestBody": {
           "required": true,
           "content": {
@@ -3352,9 +3365,11 @@
           "durationSeconds",
           "seekMode",
           "expiresAt",
-          "attribution"
+          "attribution",
+          "capability"
         ],
         "properties": {
+          "capability": { "$ref": "#/components/schemas/PlaybackCapability" },
           "sessionId": {
             "type": "string"
           },
@@ -3395,8 +3410,20 @@
           },
           "errorCode": {
             "type": "string",
-            "description": "Includes AUDIO_SOURCE_UNAVAILABLE, TRANSCODE_UNAVAILABLE and TRANSCODE_FAILED; no signed media URLs, credentials or worker stderr are exposed."
+            "description": "包含 ENTITLEMENT_REQUIRED、PUBLIC_PLAYBACK_NOT_ALLOWED、UPSTREAM_ACCESS_RESTRICTED、PLAYBACK_BUDGET_EXCEEDED 及既有错误。内部 SOURCE_AUTH_EXPIRED 公开映射为 UPSTREAM_UNAVAILABLE。没有签名 URL、账号标识、凭据版本、Cookie 或 worker stderr。"
           }
+        }
+      },
+      "PlaybackCapability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mediaKind", "trackDurationSeconds", "streamDurationSeconds", "previewStartSeconds", "previewEndSeconds"],
+        "properties": {
+          "mediaKind": { "type": "string", "enum": ["full", "preview", "unknown"] },
+          "trackDurationSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
+          "streamDurationSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
+          "previewStartSeconds": { "type": "integer", "nullable": true, "minimum": 0 },
+          "previewEndSeconds": { "type": "integer", "nullable": true, "minimum": 0 }
         }
       }
     }

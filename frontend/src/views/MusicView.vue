@@ -10,6 +10,8 @@ import { playlistSyncFailureMessage } from '../musicLibraryApi';
 const { playlists: platformPlaylists, status: libraryStatus, error: libraryError, reload: loadLibrary } = useMusicLibrary();
 const player = useMusicPlayer();
 const { state: playerState, message: playerMessage, currentTime, duration, volume } = player;
+const playbackCapability = player.capability;
+const mediaKindLabel = computed(() => playbackCapability.value.mediaKind === 'full' ? '完整音源' : playbackCapability.value.mediaKind === 'preview' ? '试听片段' : '完整性未确认');
 function timeLabel(value: number) { return `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`; }
 import { shanghaiDate } from "../musicDaily";
 import { fetchTodayRecommendations } from "../musicApi";
@@ -624,6 +626,10 @@ onBeforeUnmount(() => {
       </div>
       <p id="music-playback-status" class="music-player-status">
         {{ playerMessage }}
+      </p>
+      <p v-if="player.track.value" class="music-player-status" aria-live="polite">
+        {{ mediaKindLabel }}
+        <span v-if="playbackCapability.mediaKind === 'preview' && playbackCapability.previewStartSeconds !== null && playbackCapability.previewEndSeconds !== null"> · {{ timeLabel(playbackCapability.previewStartSeconds) }}–{{ timeLabel(playbackCapability.previewEndSeconds) }}</span>
       </p>
     </section>
     <p v-if="notice" class="music-notice" role="status">{{ notice }}</p>

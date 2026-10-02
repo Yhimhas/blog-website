@@ -158,6 +158,13 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		})
 	}
 	admin := v.Group("/admin", a.requireSession, a.requireAdmin)
+	admin.GET("/music/playback-metrics", func(c *gin.Context) {
+		if player == nil {
+			apiFail(c, 503, "PLAYBACK_DISABLED", "播放服务未启用")
+			return
+		}
+		data(c, 200, player.Metrics())
+	})
 	admin.GET("/posts", func(c *gin.Context) {
 		f, q, ok := readFilter(c)
 		if !ok {

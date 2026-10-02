@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"blog-website/backend/internal/music/playback"
 	"errors"
 	"net"
 	"net/url"
@@ -10,12 +11,19 @@ import (
 )
 
 type Config struct {
-	MediaAddr, YTDLP, FFmpeg          string
-	MusicForceTranscode               bool
-	MusicPlayback                     bool
-	Addr, DatabaseURL, Origin, Env    string
-	SessionTTL                        time.Duration
-	SecureCookie, Demo, MusicAutoSync bool
+	MediaAddr, YTDLP, FFmpeg                 string
+	MusicForceTranscode                      bool
+	MusicPlayback                            bool
+	Addr, DatabaseURL, Origin, Env           string
+	SessionTTL                               time.Duration
+	SecureCookie, Demo, MusicAutoSync        bool
+	NeteaseCookieFile, GrantsFile            string
+	MusicWebRoot                             string
+	AccountPerMinute, AccountRejectThreshold int
+	AccountCooldown                          time.Duration
+	PlaybackPolicy                           playback.Policy
+	PlaybackOptions                          playback.Options
+	TrustedMusicProxies                      []*net.IPNet
 }
 
 func LoadConfig() (Config, error) {
@@ -97,6 +105,9 @@ func LoadConfig() (Config, error) {
 	}
 	if !c.Demo && c.DatabaseURL == "" {
 		return c, errors.New("DATABASE_URL is required; use DEMO_MODE=true only for the original in-memory demo")
+	}
+	if err := c.loadMusic(); err != nil {
+		return c, err
 	}
 	return c, nil
 }

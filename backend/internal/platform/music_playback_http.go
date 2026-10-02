@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"strings"
 )
@@ -69,10 +68,10 @@ func bindPlayback(v *gin.RouterGroup, p *playback.Service, cfg Config) {
 			o = auth.Token()
 			http.SetCookie(c.Writer, &http.Cookie{Name: playbackCookie, Value: o, Path: "/api/v1/music", HttpOnly: true, Secure: cfg.SecureCookie, SameSite: http.SameSiteStrictMode, MaxAge: 7 * 3600})
 		}
-		ip, _, _ := net.SplitHostPort(c.Request.RemoteAddr)
+		ip := cfg.MusicClientIP(c.Request)
 		out, err := p.Create(c.Request.Context(), o, ip, body.TrackID)
 		if err != nil {
-			code := playback.Code(err)
+			code := playback.PublicCode(playback.Code(err))
 			apiFail(c, playbackStatus(code), string(code), "暂时无法播放此曲目")
 			return
 		}
@@ -104,6 +103,7 @@ func NewMusicStreamHandler(p *playback.Service, cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		fail := func(status int, e playback.Failure) {
+			e = playback.PublicCode(e)
 			writeError(w, status, string(e), "音频流暂时不可用，请重新播放", auth.Token()[:32])
 		}
 		if r.Method != "GET" {

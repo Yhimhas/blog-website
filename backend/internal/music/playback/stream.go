@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -90,8 +91,12 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			fail(409, Conflict)
 		} else if err == Busy {
 			fail(429, Busy)
-		} else {
+		} else if err == Expired {
 			fail(410, Expired)
+		} else if err == PublicNotAllowed || err == AccessRestricted {
+			fail(403, PublicCode(Code(err)))
+		} else {
+			fail(503, PublicCode(Code(err)))
 		}
 		return
 	}
@@ -105,7 +110,7 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			panic(http.ErrAbortHandler)
 		}
 	}()
-	ctx, cancel := context.WithTimeout(v.ctx, 6*time.Hour)
+	ctx, cancel := context.WithTimeout(v.ctx, s.options.MaxStreamDuration)
 	defer cancel()
 	disconnect := context.AfterFunc(r.Context(), cancel)
 	defer disconnect()
@@ -126,6 +131,9 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		}
 	}
 	client := s.client
+	copyMediaClient := *client
+	copyMediaClient.Jar = nil
+	client = &copyMediaClient
 	if v.audio.RedirectPolicy != nil {
 		copyClient := *client
 		copyClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -152,6 +160,51 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 410 {
+		// Exactly one refresh before any audio bytes; never change audience or kind.
+		_ = resp.Body.Close()
+		fresh, refreshErr := s.resolveAgain(ctx, v.Attribution)
+		fresh = normalizeAudio(fresh, v.Attribution)
+		fresh.Transcode = fresh.Transcode || s.options.ForceTranscode
+		if refreshErr == nil {
+			refreshErr = s.options.Policy.Check(v.Attribution.ID, fresh)
+		}
+		if refreshErr == nil && (!reflect.DeepEqual(fresh.Capability, v.audio.Capability) || fresh.SourceMode != v.audio.SourceMode || fresh.CredentialVersion != v.audio.CredentialVersion) {
+			refreshErr = PublicNotAllowed
+		}
+		if refreshErr != nil {
+			first.Stop()
+			result = Code(refreshErr)
+			fail(503, PublicCode(Code(refreshErr)))
+			return
+		}
+		freshURL, parseErr := url.Parse(fresh.URL)
+		if parseErr != nil || !MediaURL(fresh.URL) {
+			first.Stop()
+			result = Unsupported
+			fail(422, Unsupported)
+			return
+		}
+		retry := req.Clone(ctx)
+		retry.URL = freshURL
+		copyClient := *s.client
+		copyClient.Jar = nil
+		if fresh.RedirectPolicy != nil {
+			copyClient.CheckRedirect = fresh.RedirectPolicy
+		}
+		resp, err = copyClient.Do(retry)
+		if err != nil {
+			first.Stop()
+			result = Code(err)
+			fail(503, PublicCode(Code(err)))
+			return
+		}
+		defer resp.Body.Close()
+		v.audio = fresh
+		s.mu.Lock()
+		s.metrics.ReResolutions++
+		s.mu.Unlock()
+	}
 	if resp.StatusCode != 200 {
 		first.Stop()
 		result = Unavailable
@@ -236,24 +289,38 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			_ = rc.SetWriteDeadline(time.Now())
 			return ctx.Err()
 		}
+		if e := s.charge(ctx, v, len(b)); e != nil {
+			return e
+		}
 		started = true
-		if _, e := w.Write(b); e != nil {
+		written, e := w.Write(b)
+		s.mu.Lock()
+		s.metrics.OutputBytes += int64(written)
+		if v.outputBytes == int64(len(b)) {
+			s.metrics.FirstAudioSamples++
+			s.metrics.FirstAudioMillis += time.Since(v.created).Milliseconds()
+		}
+		s.mu.Unlock()
+		if e != nil {
 			return e
 		}
 		return rc.Flush()
 	}
 	if err = write(buf[:n]); err != nil {
-		result = Unavailable
+		result = Code(err)
+		if !started {
+			fail(503, PublicCode(Code(err)))
+		}
 		return
 	}
 	checkCtx, done := context.WithTimeout(ctx, 3*time.Second)
-	s.store.Checked(checkCtx, v.Attribution.ID, "")
+	s.record(checkCtx, v.Attribution.ID, v.audio, "")
 	done()
 	for {
 		n, err = reader.Read(buf)
 		if n > 0 {
 			if e := write(buf[:n]); e != nil {
-				result = Unavailable
+				result = Code(e)
 				return
 			}
 		}
