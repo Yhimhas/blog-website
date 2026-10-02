@@ -1,5 +1,7 @@
 # 代码注意事项与 Review 清单
 
+> 历史方案／设计资料，保留原文。当前实现统一见 [项目当前状态](project-status.md)（2026-10-02）；下文的技术选型、待实现事项和阶段状态只代表编写时点。
+
 适用背景：有 React 和 C++ 基础，学习 Vue 与 Go；每天两小时亲手开发个人博客和每日音乐推荐。
 
 配套：[每日开发计划](./daily-development-learning-plan.md) · [原始方案](./personal-website-development-plan.md)
