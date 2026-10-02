@@ -61,7 +61,19 @@ func run(logger *slog.Logger) error {
 			if _, err := exec.LookPath(cfg.FFmpeg); err != nil {
 				return errors.New("MUSIC_FFMPEG executable unavailable")
 			}
-			player = playback.New(ctx, playback.Resolvers{"bilibili": bilibili.Resolver{Binary: cfg.YTDLP}, "netease": netease.NewAudioResolver()}, musicService, playback.Options{FFmpeg: cfg.FFmpeg, ForceTranscode: cfg.MusicForceTranscode})
+			var neteaseResolver playback.Resolver = netease.NewAudioResolver()
+			if cfg.NeteaseCookieFile != "" {
+				account, err := netease.NewAccountResolver(cfg.NeteaseCookieFile, musicService, netease.AccountLimits{PerMinute: cfg.AccountPerMinute, RejectThreshold: cfg.AccountRejectThreshold, Cooldown: cfg.AccountCooldown})
+				if err != nil {
+					return errors.New("NetEase private credential file unavailable or invalid")
+				}
+				neteaseResolver = playback.FallbackResolver{Public: neteaseResolver, Account: account, Policy: cfg.PlaybackPolicy}
+			}
+			options := cfg.PlaybackOptions
+			options.FFmpeg = cfg.FFmpeg
+			options.ForceTranscode = cfg.MusicForceTranscode
+			options.Control = musicService
+			player = playback.New(ctx, playback.Resolvers{"bilibili": bilibili.Resolver{Binary: cfg.YTDLP}, "netease": neteaseResolver}, musicService, options)
 			defer player.Close()
 			media = &http.Server{Addr: cfg.MediaAddr, Handler: platform.NewMusicStreamHandler(player, cfg), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 			mediaListener, err = net.Listen("tcp", cfg.MediaAddr)

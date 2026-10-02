@@ -14,9 +14,10 @@ const target = { id: 'netease:595975585', provider: 'netease', title: '指定歌
 const manual = { id: 'netease:1', provider: 'netease', title: '人工导入', sourceUrl: 'https://music.163.com/playlist?id=1', syncStatus: 'ready' }
 const track = { id: 'netease:33894312', provider: 'netease', title: '人工样本', author: '测试作者', sourceUrl: 'https://music.163.com/song?id=33894312', availability: 'unknown' }
 
-async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = null, manualTracks = [], targetTracks = [], query = '', platform = 'netease', tab = 'library', extraPlaylists = [], failLibrary = false } = {}) {
+async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = null, manualTracks = [], targetTracks = [], query = '', platform = 'netease', tab = 'library', extraPlaylists = [], failLibrary = false, playbackCapability } = {}) {
   const playlists = [{ ...target, syncStatus: status, syncErrorCode, syncedAt }, manual, ...extraPlaylists]
   t.mock.method(globalThis, 'fetch', async url => {
+    if (url === '/api/v1/music/playback-sessions') return Response.json({data:{sessionId:'ui-fixture',status:'ready',streamUrl:'/api/v1/music/streams/ui-fixture',durationSeconds:200,capability:playbackCapability}})
     if (url === '/api/v1/music/recommendations/today') return Response.json({ data: { date: '2026-09-30', timezone: 'Asia/Shanghai', status: 'ready', items: [] } })
     if (failLibrary) return new Response(null, { status: 503 })
     if (url === '/api/v1/music/playlists') return Response.json({ data: playlists })
@@ -31,6 +32,7 @@ async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = 
       state.platform.value = platform
       state.query.value = query
       await state.loadLibrary()
+      if (playbackCapability) await state.player.play(state.localTracks.value[0],state.localTracks.value)
       return state
     },
   }
@@ -42,6 +44,18 @@ async function render(t, { status = 'pending', syncErrorCode = null, syncedAt = 
   assert.doesNotMatch(input, /\bdisabled\b/)
   return html
 }
+
+test('actual player UI distinguishes full, preview and unknown capability', async t => {
+  globalThis.Audio=class extends EventTarget { paused=true;src='';volume=1;play(){this.paused=false;this.dispatchEvent(new Event('playing'));return Promise.resolve()}pause(){this.paused=true}removeAttribute(){this.src=''}load(){} }
+  for(const [mediaKind,label] of [['full','完整音源'],['preview','试听片段'],['unknown','完整性未确认']]) {
+    await t.test(mediaKind,async t=>{
+      const playbackCapability={mediaKind,trackDurationSeconds:200,streamDurationSeconds:mediaKind==='preview'?30:200,previewStartSeconds:mediaKind==='preview'?30:null,previewEndSeconds:mediaKind==='preview'?60:null}
+      const html=await render(t,{manualTracks:[track],playbackCapability})
+      assert.ok(html.includes(label))
+      if(mediaKind==='preview')assert.match(html,/0:30.*1:00/)
+    })
+  }
+})
 
 test('pending target playlist does not block searching manually imported NetEase tracks', async t => {
   const html = await render(t, { manualTracks: [track], query: '人工样本' })

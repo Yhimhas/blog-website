@@ -106,7 +106,7 @@ func (s Service) Generate(ctx context.Context, now time.Time) error {
 		if n > 0 {
 			return nil
 		}
-		tracks, err := music.ReadTracks(tx.Table("music_items m").Select("DISTINCT ON (m.id) m.*,si.source_id AS playlist_id").Joins("JOIN source_items si ON si.item_id=m.id AND si.active JOIN music_sources s ON s.id=si.source_id AND s.enabled").Where("m.availability='available' AND s.synced_at IS NOT NULL").Order("m.id,si.source_id"))
+		tracks, err := music.ReadTracks(tx.Table("music_items m").Select("DISTINCT ON (m.id) m.*,si.source_id AS playlist_id").Joins("JOIN source_items si ON si.item_id=m.id AND si.active JOIN music_sources s ON s.id=si.source_id AND s.enabled").Where("m.availability='available' AND m.public_playback_scope='public' AND m.public_media_kind<>'preview' AND s.synced_at IS NOT NULL").Order("m.id,si.source_id"))
 		if err != nil {
 			return err
 		}

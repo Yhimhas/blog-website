@@ -32,12 +32,18 @@ func TestAudioOfficialRedirect(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"audio/mpeg"}}, Body: io.NopCloser(strings.NewReader(prefix)), Request: r}, nil
 	})}}
-	a, err := resolver.Resolve(context.Background(), neteaseTrack())
+	track := neteaseTrack()
+	duration := 200
+	track.DurationSeconds = &duration
+	a, err := resolver.Resolve(context.Background(), track)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 || a.URL != "https://m701.music.126.net/song.mp3" || a.MIME != "audio/mpeg" || a.InputFormat != "mp3" || a.Transcode {
 		t.Fatal(a)
+	}
+	if a.Duration != nil || a.Capability.StreamDuration != nil || a.Capability.MediaKind != "unknown" || a.Capability.TrackDuration == nil || *a.Capability.TrackDuration != 200 {
+		t.Fatal("track metadata was mistaken for media completeness/duration")
 	}
 }
 func TestAudioDenials(t *testing.T) {

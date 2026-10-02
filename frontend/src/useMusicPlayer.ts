@@ -1,8 +1,9 @@
 import { ref, onScopeDispose } from 'vue';
-import { createPlayback, getPlayback, stopPlayback, playbackMessage } from './musicPlaybackApi.ts';
+import { createPlayback, getPlayback, stopPlayback, playbackMessage, PlaybackError, unknownCapability } from './musicPlaybackApi.ts';
 import type { MusicTrack } from './musicLibraryApi.ts';
 export function useMusicPlayer() {
     const state = ref('idle'), message = ref('选择一首曲目开始播放。'), currentTime = ref(0), duration = ref(0), volume = ref(0.7), track = ref<MusicTrack>(), queue = ref<MusicTrack[]>([]);
+    const capability = ref(unknownCapability()), errorCode = ref('');
     let audio: HTMLAudioElement | undefined, session = '', generation = 0, controller: AbortController | undefined;
     async function release() { controller?.abort(); controller = undefined; const old = audio; audio = undefined; if (old) {
         old.pause();
@@ -18,6 +19,8 @@ export function useMusicPlayer() {
         queue.value = [...list];
         currentTime.value = 0;
         duration.value = 0;
+        capability.value = unknownCapability();
+        errorCode.value = '';
         await release();
         if (g !== generation)
             return;
@@ -48,13 +51,14 @@ export function useMusicPlayer() {
             if (g !== generation)
                 return;
             if (s.status !== 'ready' || !s.streamUrl)
-                throw Error(playbackMessage(s.errorCode));
+                throw new PlaybackError(s.errorCode || 'UPSTREAM_UNAVAILABLE');
+            capability.value = s.capability || unknownCapability();
             const a = new Audio();
             audio = a;
             a.preload = 'none';
             a.volume = volume.value;
             a.src = s.streamUrl;
-            duration.value = s.durationSeconds || 0;
+            duration.value = capability.value.streamDurationSeconds || 0;
             const live = () => g === generation && audio === a;
             a.addEventListener('loadedmetadata', () => { if (live() && Number.isFinite(a.duration))
                 duration.value = a.duration; });
@@ -73,14 +77,19 @@ export function useMusicPlayer() {
             a.addEventListener('timeupdate', () => { if (live())
                 currentTime.value = a.currentTime; });
             a.addEventListener('ended', () => { if (!live())
-                return; state.value = 'ended'; message.value = '播放结束'; const i = queue.value.findIndex(t => t.id === selected.id); const next = queue.value[i + 1]; if (next)
+                return;
+                if (capability.value.mediaKind === 'preview') {
+                    state.value = 'preview-ended'; message.value = '试听结束，可前往原站收听。'; void release(); return;
+                }
+                state.value = 'ended'; message.value = capability.value.mediaKind === 'full' ? '播放结束' : '音频播放结束，完整性未确认。'; const i = queue.value.findIndex(t => t.id === selected.id); const next = queue.value[i + 1]; if (next)
                 void play(next, queue.value); });
             a.addEventListener('error', () => { if (live()) {
                 state.value = 'error';
                 message.value = '音频连接中断，请重新播放。';
                 const id = session;
-                void getPlayback(id).then(v => { if (live() && v.errorCode)
-                    message.value = playbackMessage(v.errorCode); }).catch(() => { });
+                void getPlayback(id).then(v => { if (live() && v.errorCode) {
+                    errorCode.value = v.errorCode; message.value = playbackMessage(v.errorCode);
+                } }).catch(() => { });
                 void stopPlayback(id);
             } });
             await resumeAudio(a, g);
@@ -89,6 +98,7 @@ export function useMusicPlayer() {
             if (g !== generation)
                 return;
             state.value = 'error';
+            errorCode.value = e instanceof PlaybackError ? e.code : '';
             message.value = e instanceof Error ? e.message : '播放失败，请重试';
             await release();
         }
@@ -142,5 +152,5 @@ export function useMusicPlayer() {
     function setVolume(v: number) { volume.value = Math.min(1, Math.max(0, v)); if (audio)
         audio.volume = volume.value; }
     onScopeDispose(stop);
-    return { state, message, currentTime, duration, volume, track, queue, play, toggle, stop, step, setVolume };
+    return { state, message, currentTime, duration, volume, track, queue, capability, errorCode, play, toggle, stop, step, setVolume };
 }

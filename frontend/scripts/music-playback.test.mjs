@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { effectScope } from 'vue'
 import { useMusicPlayer } from '../src/useMusicPlayer.ts'
 import { fetchMusicLibrary } from '../src/musicLibraryApi.ts'
+import { parseCapability, PlaybackError } from '../src/musicPlaybackApi.ts'
 class AudioMock extends EventTarget {
  static instances=[]; paused=true; currentTime=0; duration=80; volume=1; ended=false; src=''
  constructor(){super();AudioMock.instances.push(this)}
@@ -48,4 +49,25 @@ test('NetEase uses unified playback and preserves official fallback on refusal',
  globalThis.fetch=async(url,options)=>{if(url.endsWith('/stop'))return new Response(null,{status:204});if(options.method==='POST')requested=JSON.parse(options.body).trackId;if(deny)return new Response(JSON.stringify({error:{code:'AUDIO_SOURCE_UNAVAILABLE'}}),{status:422});return response(session('netease'))}
  const scope=effectScope();const p=scope.run(()=>useMusicPlayer());const netease={...track,id:'netease:123',platform:'netease',url:'https://music.163.com/#/song?id=123'}
  await p.play(netease,[netease]);assert.equal(requested,'netease:123');assert.equal(p.state.value,'playing');deny=true;await p.play(netease,[netease]);assert.equal(p.state.value,'error');assert.match(p.message.value,/官方音源/);assert.equal(p.track.value.url,netease.url);scope.stop()
+})
+
+test('preview ends explicitly, releases its session and never auto-advances', async()=>{
+ globalThis.Audio=AudioMock;AudioMock.reject=false;let creates=0,stops=0
+ const capability={mediaKind:'preview',trackDurationSeconds:200,streamDurationSeconds:30,previewStartSeconds:30,previewEndSeconds:60}
+ globalThis.fetch=async(url,options)=>{if(url.endsWith('/stop')){stops++;return new Response(null,{status:204})};if(options.method==='POST')creates++;return response({...session('preview'),capability})}
+ const scope=effectScope();const p=scope.run(()=>useMusicPlayer());await p.play(track,[track,{...track,id:'next'}]);assert.equal(p.capability.value.mediaKind,'preview');assert.equal(p.duration.value,30)
+ AudioMock.instances.at(-1).dispatchEvent(new Event('ended'));await new Promise(r=>setImmediate(r));assert.equal(p.state.value,'preview-ended');assert.match(p.message.value,/试听结束/);assert.equal(creates,1);assert.equal(stops,1);scope.stop()
+})
+
+test('missing completeness evidence remains unknown even after browser metadata',async()=>{
+ globalThis.Audio=AudioMock;AudioMock.reject=false;globalThis.fetch=async(url)=>url.endsWith('/stop')?new Response(null,{status:204}):response(session('unknown'))
+ const scope=effectScope();const p=scope.run(()=>useMusicPlayer());await p.play(track,[track]);const a=AudioMock.instances.at(-1);a.dispatchEvent(new Event('loadedmetadata'));assert.equal(p.capability.value.mediaKind,'unknown');a.dispatchEvent(new Event('ended'));assert.match(p.message.value,/完整性未确认/);scope.stop()
+})
+
+test('capability and machine-readable failures are validated independently',()=>{
+ assert.equal(parseCapability(undefined).mediaKind,'unknown')
+ const valid={mediaKind:'full',trackDurationSeconds:200,streamDurationSeconds:200,previewStartSeconds:null,previewEndSeconds:null}
+ assert.equal(parseCapability(valid).mediaKind,'full')
+ for(const raw of [null,{...valid,mediaKind:'fake'},{...valid,streamDurationSeconds:-1},{...valid,mediaKind:'preview'},{...valid,mediaKind:'preview',previewStartSeconds:60,previewEndSeconds:30}])assert.throws(()=>parseCapability(raw))
+ assert.equal(new PlaybackError('ENTITLEMENT_REQUIRED').code,'ENTITLEMENT_REQUIRED')
 })
