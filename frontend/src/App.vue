@@ -7,6 +7,9 @@ import { FieldProvider } from "@field-lab/vue";
 
 import { pageLeaving, pageReady } from "./pageTransition";
 import EntryIntro from "./components/EntryIntro.vue";
+import MiniMusicPlayer from './components/MiniMusicPlayer.vue';
+import { provideMusicPlayer } from './useMusicPlayer';
+const musicPlayer = provideMusicPlayer();
 import { applySeo } from './pageSeo';
 import { routeSeo } from './seo';
 const route = useRoute();
@@ -143,7 +146,7 @@ function onPageEntered() {
               <span class="f-rail__barcode" /><span>FIELD / UI</span><span>V.01</span>
             </div>
           </nav>
-          <div class="page site-layout" :class="{ 'music-layout': pageRoute.path === '/music' }">
+          <div class="page site-layout" :class="{ 'music-layout': pageRoute.path === '/music', 'has-music-player': pageRoute.path !== '/music' && musicPlayer.track.value && musicPlayer.state.value !== 'stopped' }">
             <header v-if="pageRoute.path !== '/music'" class="topbar">
               <RouterLink to="/" class="wordmark"
                 ><img
@@ -183,5 +186,10 @@ function onPageEntered() {
         </div>
       </Transition>
     </RouterView>
+    <MiniMusicPlayer v-if="route.path !== '/music'" />
   </FieldProvider>
 </template>
+
+<style scoped>
+.site-layout.has-music-player { padding-bottom:180px; }
+</style>

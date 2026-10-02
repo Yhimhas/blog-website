@@ -44,6 +44,14 @@ func TestPlaybackHTTPGuards(t *testing.T) {
 	}
 	path := "/api/v1/music/playback-sessions"
 	body := `{"trackId":"bilibili:BV1a4MS67Eey:1"}`
+	for _, body := range []string{`{"trackId":"t","startSeconds":-1}`, `{"trackId":"t","startSeconds":604801}`} {
+		if w := call(body, "https://site.test", nil, path); w.Code != 422 {
+			t.Fatal("invalid offset accepted", w.Code)
+		}
+	}
+	if w := call(`{"trackId":"t","startSeconds":"10"}`, "https://site.test", nil, path); w.Code != 400 {
+		t.Fatal("non-numeric offset accepted", w.Code)
+	}
 	if w := call(body, "https://evil.test", nil, path); w.Code != 403 {
 		t.Fatal(w.Code)
 	}

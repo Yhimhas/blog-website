@@ -165,7 +165,7 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 		_ = resp.Body.Close()
 		fresh, refreshErr := s.resolveAgain(ctx, v.Attribution)
 		fresh = normalizeAudio(fresh, v.Attribution)
-		fresh.Transcode = fresh.Transcode || s.options.ForceTranscode
+		fresh.Transcode = fresh.Transcode || s.options.ForceTranscode || v.StartSeconds > 0
 		if refreshErr == nil {
 			refreshErr = s.options.Policy.Check(v.Attribution.ID, fresh)
 		}
@@ -238,7 +238,7 @@ func (s *Service) Stream(w http.ResponseWriter, r *http.Request, id, owner strin
 			io.Reader
 			io.Closer
 		}{io.MultiReader(bytes.NewReader(bytes.Clone(buf[:n])), resp.Body), resp.Body}
-		converted, err = s.transcode(ctx, input, format)
+		converted, err = s.transcode(ctx, input, format, v.StartSeconds)
 		if err != nil {
 			result = err
 			status := 503

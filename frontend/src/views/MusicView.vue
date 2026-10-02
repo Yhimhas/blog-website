@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import MusicIcon from "../components/MusicIcon.vue";
+import MusicSeek from '../components/MusicSeek.vue';
 import { useMusicLibrary } from '../useMusicLibrary';
 import { useMusicPlayer } from '../useMusicPlayer';
 import { migrateFavoriteID, legacyFavorite, missingFavorite, readFavoriteSnapshots } from '../musicFavorites';
@@ -620,8 +621,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="music-playback-progress">
-        <span>{{ timeLabel(currentTime) }} / {{ duration ? timeLabel(duration) : '--:--' }}</span>
-        <progress :value="currentTime" :max="duration || 1" aria-label="播放进度（暂不支持拖动）" />
+        <MusicSeek />
         <label>音量 <input type="range" min="0" max="1" step="0.05" :value="volume" @input="player.setVolume(Number(($event.target as HTMLInputElement).value))" /></label>
       </div>
       <p id="music-playback-status" class="music-player-status">

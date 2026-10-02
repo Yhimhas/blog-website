@@ -5,6 +5,7 @@ import (
 	"blog-website/backend/internal/music/provider"
 	"context"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"sync"
@@ -32,6 +33,7 @@ const (
 	PublicNotAllowed     Failure = "PUBLIC_PLAYBACK_NOT_ALLOWED"
 	AccessRestricted     Failure = "UPSTREAM_ACCESS_RESTRICTED"
 	BudgetExceeded       Failure = "PLAYBACK_BUDGET_EXCEEDED"
+	InvalidSeek          Failure = "INVALID_SEEK"
 )
 
 func Code(err error) Failure {
@@ -88,16 +90,17 @@ type Store interface {
 	Checked(context.Context, string, Failure)
 }
 type View struct {
-	ID          string         `json:"sessionId"`
-	Status      string         `json:"status"`
-	StreamURL   string         `json:"streamUrl,omitempty"`
-	MIME        string         `json:"mimeType,omitempty"`
-	Duration    *int           `json:"durationSeconds"`
-	Seek        string         `json:"seekMode"`
-	Expires     time.Time      `json:"expiresAt"`
-	Attribution provider.Track `json:"attribution"`
-	Error       Failure        `json:"errorCode,omitempty"`
-	Capability  Capability     `json:"capability"`
+	ID           string         `json:"sessionId"`
+	Status       string         `json:"status"`
+	StreamURL    string         `json:"streamUrl,omitempty"`
+	MIME         string         `json:"mimeType,omitempty"`
+	Duration     *int           `json:"durationSeconds"`
+	Seek         string         `json:"seekMode"`
+	StartSeconds float64        `json:"startSeconds"`
+	Expires      time.Time      `json:"expiresAt"`
+	Attribution  provider.Track `json:"attribution"`
+	Error        Failure        `json:"errorCode,omitempty"`
+	Capability   Capability     `json:"capability"`
 }
 type session struct {
 	View
@@ -192,7 +195,14 @@ func (s *Service) sweep(now time.Time) {
 		}
 	}
 }
-func (s *Service) Create(ctx context.Context, owner, ip, id string) (out View, err error) {
+func (s *Service) Create(ctx context.Context, owner, ip, id string, offsets ...float64) (out View, err error) {
+	start := 0.0
+	if len(offsets) > 0 {
+		start = offsets[0]
+	}
+	if math.IsNaN(start) || math.IsInf(start, 0) || start < 0 || start > 604800 {
+		return View{}, InvalidSeek
+	}
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -288,6 +298,7 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (out View, e
 	}
 	c, cancel := context.WithCancel(s.ctx)
 	v := &session{owner: owner, ctx: c, cancel: cancel, created: time.Now(), View: View{ID: sessionID, Status: "preparing", Capability: Capability{MediaKind: "unknown", TrackDuration: track.DurationSeconds}, Seek: "none", Attribution: track, Expires: time.Now().Add(25 * time.Second)}}
+	v.StartSeconds = start
 	s.sessions[v.ID] = v
 	out = v.View
 	s.mu.Unlock()
@@ -299,6 +310,13 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (out View, e
 		a, err := s.resolver.Resolve(rc, track)
 		done()
 		a = normalizeAudio(a, track)
+		if err == nil && start > 0 {
+			if s.options.FFmpeg == "" || start >= seekDuration(a.Capability) {
+				err = InvalidSeek
+			} else {
+				a.Transcode = true
+			}
+		}
 		if err == nil {
 			err = s.options.Policy.Check(track.ID, a)
 		}
@@ -327,6 +345,9 @@ func (s *Service) Create(ctx context.Context, owner, ip, id string) (out View, e
 				}
 				v.Duration = a.Duration
 				v.Capability = a.Capability
+				if s.options.FFmpeg != "" && seekDuration(a.Capability) > 0 {
+					v.Seek = "restart"
+				}
 				v.StreamURL = "/api/v1/music/streams/" + v.ID
 				v.Status = "ready"
 				v.Expires = time.Now().Add(time.Minute)
