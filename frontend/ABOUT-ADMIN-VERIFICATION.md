@@ -1,5 +1,7 @@
 # 关于页与管理工作台交付记录
 
+> 历史本地工作台验收。原工作台现位于 `/admin/local`；当前 `/admin` 已接入账号权限、数据库文章与修订发布，详见 [项目当前状态](../docs/project-status.md)。
+
 - 路由：`/about`、`/admin`，均已加入站点导航。
 - FIELD UI：复用 FieldProvider（沿用全站 580ms）、MotionReveal（分组延迟 80ms）、OrbitField（orbit，1400 点，浅色点云）、TechTabs、TechButton、FieldDialog。
 - 验证：生产构建、vue-tsc、文章库校验通过；浏览器确认 1280px 桌面与 390px 窄屏布局，未发现横向溢出。

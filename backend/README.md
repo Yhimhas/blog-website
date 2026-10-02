@@ -1,10 +1,12 @@
-# Go 后端（2026-09-25）
+# Go 后端
+
+当前能力与证据边界统一见 [项目当前状态](../docs/project-status.md)。当前包含迁移 000005、文章修订与分类标签管理、完整歌单同步和公开播放。
 
 当前使用你已安装的 **Go 1.27.1**，保留原 `go.mod` 版本修改。正式服务为 Gin + GORM + PostgreSQL，数据库结构使用嵌入的版本化 SQL 和 golang-migrate 显式创建。无自动迁移、无默认管理密码、无静默内存回退。
 
 已实现：公开文章/分类/标签、ready、草稿创建/修改/发布/归档、乐观版本控制、标签事务、站长会话、Origin/CSRF、登录限流、公开歌单/曲目、网易云异步同步与状态查询、人工音乐元数据导入、上海日期的每日推荐与历史。完整字段及权限见 [OpenAPI](../api/openapi.yaml)（JSON 格式也是合法 YAML 1.2）。
 
-当前机器没有 PostgreSQL，数据库集成测试需要安装后单独运行；真实网易云歌单同步、前端接入、纯音频、上线和备份恢复尚未验收。测试 fixture 不是在线同步成功的证明。
+本机数据库测试需显式配置独立 TEST_DATABASE_URL，未配置时会 SKIP。此前隔离服务器已验证完整歌单同步、数据库集成与公开样本播放；当前版本生产上线、备份恢复及新增行为的完整验收仍需落实，具体范围见状态文档。
 
 ## 启动正式后端
 
@@ -75,7 +77,7 @@ PATCH 必须提交 version；省略字段不变，`categoryId:null` 清空分类
 
 迁移登记 `netease:595975585`，初始 pending，无伪造曲目。登录后以相同 Cookie/Origin/CSRF 调用 `POST /admin/music/playlists/netease:595975585/sync`，返回 202 和真实 runId，再查询 `GET /admin/music/sync-runs/{runId}`。同来源运行中返回 409。全局最多 2 个同步任务，手动触发最多 4 次/分钟；登录最多 10 次/分钟。
 
-适配器只向固定 `https://music.163.com/api/playlist/detail` 请求公开 JSON，禁用跳转和环境代理，不带 Cookie、签名或媒体下载。这个上游并非本项目可保证稳定的开放 API：拒绝访问、超时、HTML、超过 2 MiB、trackCount 与 tracks 数量不一致均失败，不替换快照。单次最多 2000 首；重复 ID 保留首条；无可靠时长/作者/iframe 返回 null；同步曲目默认 availability=unknown，不冒充可播。
+元数据适配器读取完整歌单 ID，分批补齐缺失详情，按原顺序重建并在提交前复查。拒绝访问、超时、不完整详情或复查变化均不替换成功快照；单次最多 2000 首。此链路不携带账号 Cookie，元数据不代表可播。接口和校验细节见 [完整歌单实现](../docs/netease-playlist-completion-implementation-20261002.md)。
 
 快照事务将旧关联标记 inactive，再 upsert 新关联；失败回滚。相同 hash 不重复写曲目。任务状态落库，进程退出取消上游；遗留 running 超过 2 分钟由调度器标记 `SYNC_INTERRUPTED`。首次没有成功快照的曲目 API 固定返回 **200 + 空数组**，以歌单 syncStatus 区分 pending/failed/ready。已失败但有旧快照仍返回旧曲目。
 
@@ -98,6 +100,8 @@ PATCH 必须提交 version；省略字段不变，`categoryId:null` 清空分类
 服务启动只补今天；之后在上海时间 00:10 起执行（分钟级轮询），数据库失败最多尝试 3 次，间隔 1/2 分钟。使用日期唯一约束和事务级 advisory lock 保证多实例幂等。推荐 GET 不临时重抽。可用 `$env:MUSIC_AUTO_SYNC='true'` 显式开启每日来源同步；默认关闭，上线确认真实上游后再启用。开启后生成推荐前先尝试同步，同一来源每天自动尝试最多一次，失败使用旧快照。不补历史日期，不保存媒体。
 
 ## 验证
+
+以下 2026-09-25 结果为历史基线，最新证据入口见 [项目当前状态](../docs/project-status.md)。测试命令仍可使用，但必须区分 PASS 和 SKIP。
 
 2026-09-25 本机实际结果：`go test ./...`、`go vet ./...`、`go build ./...` 均通过；OpenAPI 的 21 个操作及本地 `$ref` 引用校验通过。`TestPostgresContracts` 因未配置 `TEST_DATABASE_URL` 明确 SKIP，数据库事务/并发和真实上游仍待运行验收。
 
@@ -141,7 +145,7 @@ go run ./cmd/api
 
 默认监听 `127.0.0.1:8081`。可在启动前通过 `$env:HTTP_ADDR = '127.0.0.1:8082'` 修改地址；端口占用会报错并退出。Ctrl+C 触发关闭，最多等待 5 秒。访问日志使用 JSON，包含与响应 `X-Request-ID` 相同的 `requestId`。
 
-当前 Go 安装目录为 `D:\Golang`。检查版本与实际命中的可执行文件：
+使用 PATH 中已有 Go，检查版本与实际命中的可执行文件：
 
 ```powershell
 go version
@@ -149,7 +153,7 @@ go version
 go env GOROOT
 ```
 
-历史便携工具链 `D:\blog-website\.tools\go1.26.7\go` 仅作为旧文件保留，不应再加入当前 PATH。恢复正式后端前设置 `$env:DEMO_MODE = 'false'`，并按本文上方配置数据库。
+历史便携工具链 `../../.tools/go1.26.7/go` 仅作为旧文件保留，不应再加入当前 PATH。恢复正式后端前设置 `$env:DEMO_MODE = 'false'`，并按本文上方配置数据库。
 
 ## API
 
@@ -204,13 +208,13 @@ go vet ./...
 
 测试通过 `httptest` 直接验证 HTTP handler，无需先启动服务；覆盖响应格式、requestId、状态码、草稿/归档隔离、正文隔离、排序、分页边界、筛选与 Unicode 参数限制。`internal/blog` 是内存业务规则和 DTO；`internal/platform` 是 HTTP 边界；`cmd/api` 负责装配、配置和服务生命周期。
 
-以上接口与测试说明仅针对保留的 B01 演示。当前正式后端已实现数据库、认证、Gin、ready、分类/标签、音乐 API 和 OpenAPI；前端联调仍待完成，详细状态以本文上方为准。
+以上接口与测试说明仅针对保留的 B01 演示。当前正式后端已实现数据库、认证、Gin、ready、分类/标签、音乐 API 和 OpenAPI；前端现已接入，详细状态以本文上方及项目状态文档为准。
 
-旧开发下载包与缓存保留在 `D:\blog-website\.tools\`，不属于 Git 仓库；其中 zip 和 Go 1.26.7 便携工具链为历史遗留，当前 Go 1.27.1 不依赖它们。本次没有删除这些文件，也没有生成新的试验产物。
+旧开发下载包与缓存保留在 `../../.tools/`，不属于 Git 仓库；其中 zip 和 Go 1.26.7 便携工具链为历史遗留，当前 Go 1.27.1 不依赖它们。本次没有删除这些文件，也没有生成新的试验产物。
 
 ## 站内音乐播放
 
-实现、实测结果、部署步骤及未完成验收见 [music 播放交付记录](../docs/music-playback-validation.md)。默认 `MUSIC_PLAYBACK_ENABLED=false`。启用后同一进程增加回环媒体监听 8082；反向代理须优先将 `/api/v1/music/streams/` 路由至该监听。
+实现、实测结果、部署步骤及未完成验收见 [最新播放实施记录](../docs/music-public-playback-implementation-20261002.md)。默认 `MUSIC_PLAYBACK_ENABLED=false`。启用后同一进程增加回环媒体监听 8082；反向代理须优先将 `/api/v1/music/streams/` 路由至该监听。
 
 导入本地 Bilibili 快照（先迁移，默认拒绝空列表和含歧义的非 P1 旧数据）：
 
