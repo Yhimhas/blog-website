@@ -9,7 +9,8 @@ const { track, state, message, capability } = player;
   <aside v-if="track && state !== 'stopped'" class="mini-music" aria-label="迷你播放器">
     <div class="mini-music__heading">
       <RouterLink to="/music" class="mini-music__title">{{ track.title }} <small>{{ track.artist }}</small></RouterLink>
-      <button :disabled="state === 'preparing'" @click="player.toggle()">{{ state === 'playing' || state === 'buffering' ? '暂停' : '播放' }}</button>
+      <button v-if="state === 'error'" @click="player.play(track, player.queue.value)">重新播放</button>
+      <button v-else :disabled="state === 'preparing'" @click="player.toggle()">{{ state === 'playing' || state === 'buffering' ? '暂停' : '播放' }}</button>
       <button @click="player.stop()" aria-label="停止播放并关闭迷你播放器">停止</button>
     </div>
     <MusicSeek />
