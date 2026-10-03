@@ -16,6 +16,10 @@ export interface AdminPost extends PostInput {
   revision: (Omit<PostInput, 'slug'> & { updatedAt: string }) | null
 }
 export interface Page<T> { data: T[]; pagination: { page: number; pageSize: number; total: number } }
+export interface SeoPublication {
+  sourceId: string; revision: string; appliedRevision: string
+  lastAttemptAt: string | null; publishedAt: string | null; lastError: string
+}
 export class ApiError extends Error {
   status: number
   code: string
@@ -24,6 +28,16 @@ export class ApiError extends Error {
   }
 }
 let csrf = ''
+function validSeoPublication(value: unknown): value is SeoPublication {
+  if (!value || typeof value !== 'object') return false
+  const data = value as Partial<SeoPublication>
+  const timestamp = (value: unknown) => value === null || typeof value === 'string' && Number.isFinite(Date.parse(value))
+  return typeof data.sourceId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(data.sourceId) &&
+    typeof data.revision === 'string' && /^[1-9][0-9]{0,18}$/.test(data.revision) &&
+    typeof data.appliedRevision === 'string' && /^(0|[1-9][0-9]{0,18})$/.test(data.appliedRevision) &&
+    BigInt(data.appliedRevision) <= BigInt(data.revision) &&
+    timestamp(data.lastAttemptAt) && timestamp(data.publishedAt) && typeof data.lastError === 'string'
+}
 async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
@@ -63,6 +77,11 @@ export const blogApi = {
   },
   async logout() { await request('/session/logout', 'POST', {}); csrf = '' },
   adminPosts: (page: number, status: AdminPost['status'] | '' = '') => request<Page<AdminPost>>(`/admin/posts?page=${page}&pageSize=20${status ? `&status=${status}` : ''}`),
+  async seoPublication(signal?: AbortSignal) {
+    const { data } = await request<{ data: unknown }>('/admin/seo', 'GET', undefined, signal)
+    if (!validSeoPublication(data)) throw new ApiError(502, 'INVALID_RESPONSE', '静态页面状态返回了无效数据。')
+    return data
+  },
   saveTerm: async (kind: TermKind, input: Omit<Term, 'id'>, id?: string) =>
     (await request<{ data: Term }>(`/admin/${kind}${id ? `/${encodeURIComponent(id)}` : ''}`, id ? 'PUT' : 'POST', input)).data,
   deleteTerm: (kind: TermKind, id: string) => request<void>(`/admin/${kind}/${encodeURIComponent(id)}`, 'DELETE'),
