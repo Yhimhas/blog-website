@@ -43,6 +43,15 @@ func TestDatabaseHTTPGuards(t *testing.T) {
 	}
 }
 
+func TestSEOStatusRequiresAdministrator(t *testing.T) {
+	handler := NewDatabaseHandler(nil, Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/admin/seo", nil))
+	if w.Code != 401 || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("unguarded SEO status", w.Code, w.Body.String())
+	}
+}
+
 func TestAuthenticatedWriteRequiresOriginAndCSRF(t *testing.T) {
 	token := auth.Token()
 	a := databaseAPI{config: Config{Origin: "http://localhost:5173"}}

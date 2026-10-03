@@ -7,6 +7,7 @@ import (
 	"blog-website/backend/internal/music/playback"
 	"blog-website/backend/internal/music/provider"
 	"blog-website/backend/internal/recommendation"
+	"blog-website/backend/internal/seo"
 	"blog-website/backend/internal/storage"
 	"bytes"
 	"context"
@@ -21,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -49,6 +51,9 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		c.Set("requestId", id)
 		c.Header("X-Request-ID", id)
 		c.Header("X-Content-Type-Options", "nosniff")
+		if c.Request.URL.Path == "/api/v1/posts" || strings.HasPrefix(c.Request.URL.Path, "/api/v1/posts/") {
+			c.Header("Cache-Control", "no-store")
+		}
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/admin") || strings.HasPrefix(c.Request.URL.Path, "/api/v1/session") {
 			c.Header("Cache-Control", "no-store")
 			c.Header("X-Robots-Tag", "noindex")
@@ -107,6 +112,14 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		data(c, 200, gin.H{"status": "ready"})
 	})
 	v.GET("/posts", a.publicPosts)
+	v.GET("/seo/revision", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Header("X-Robots-Tag", "noindex")
+		p, err := seo.Read(c.Request.Context(), db)
+		if !handleError(c, err, "NOT_FOUND") {
+			data(c, 200, gin.H{"revision": strconv.FormatInt(p.Revision, 10), "sourceId": p.SourceID})
+		}
+	})
 	v.GET("/posts/:slug", func(c *gin.Context) {
 		p, err := a.posts.FindPublic(c.Request.Context(), c.Param("slug"))
 		if handleError(c, err, "POST_NOT_FOUND") {
@@ -158,6 +171,12 @@ func NewDatabaseHandler(db *gorm.DB, cfg Config, logger *slog.Logger, m *music.S
 		})
 	}
 	admin := v.Group("/admin", a.requireSession, a.requireAdmin)
+	admin.GET("/seo", func(c *gin.Context) {
+		p, err := seo.Read(c.Request.Context(), db)
+		if !handleError(c, err, "NOT_FOUND") {
+			data(c, 200, p)
+		}
+	})
 	for _, table := range []string{"categories", "tags"} {
 		admin.POST("/"+table, a.requireWrite, func(c *gin.Context) { a.saveTerm(c, table, true) })
 		admin.PUT("/"+table+"/:id", a.requireWrite, func(c *gin.Context) { a.saveTerm(c, table, false) })

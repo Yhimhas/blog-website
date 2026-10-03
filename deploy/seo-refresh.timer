@@ -1,0 +1,11 @@
+[Unit]
+Description=Retry pending SEO publication and recover after restart
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=seo-refresh.service
+
+[Install]
+WantedBy=timers.target
