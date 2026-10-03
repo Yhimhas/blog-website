@@ -1,5 +1,7 @@
 # 音乐歌单同步错误分类与失败提示（2026-10-02）
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 本次根据 [服务器实测记录](music-server-validation-20260930.md) 和 [网易云技术说明](netease-playlist-sync-and-playback-technical-guide.md) 修正本地实现。没有访问服务器、网易云真实接口或任何数据库，没有部署，没有删除文件。
 
 ## 分类与调用链

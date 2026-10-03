@@ -1,5 +1,7 @@
 # Go 后端开发与前后端协作手册
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 > 历史方案／设计资料，保留原文。当前实现统一见 [项目当前状态](project-status.md)（2026-10-02）；下文的技术选型、待实现事项和阶段状态只代表编写时点。
 
 2026-09-25 更新：按用户本次要求由助手补全第一阶段后端实现，保留已安装 Go 1.27.1。新增 Gin/GORM/PostgreSQL、显式 SQL 迁移、博客写入与会话、音乐快照/网易云任务、每日推荐及 [OpenAPI](../api/openapi.yaml)。运行和精确行为见 [backend/README.md](../backend/README.md)。当前本机未安装 PostgreSQL，集成测试需独立测试库；真实上游、前端联调、纯音频和部署未验收。下文原始基线、学习分工与阶段状态保留作历史，不能据此认为当前仍只有内存代码。
@@ -156,7 +158,7 @@ provider 为 bilibili/netease；durationSeconds、partId、embedUrl 无可靠值
 
 后端重点测试：公开草稿隔离、PATCH 未传与空值区别、发布版本冲突、事务失败回滚、来源超时保留数据、推荐同日并发和跨日、流取消释放资源。数据库测试使用独立库；不对生产库运行破坏性测试。
 
-前端检查：`pnpm run type-check`，`pnpm run build-only -- --emptyOutDir=false`，以及桌面/手机导航、返回、深链接、键盘焦点。构建保留旧产物，不自动清理。新增测试资源和无用残留在每次交付时列出。
+前端检查：`pnpm run type-check`，`pnpm run build-only --mode development --outDir dist/backend-guide-preview-001`，以及桌面/手机导航、返回、深链接、键盘焦点。构建保留旧产物，不自动清理。新增测试资源和无用残留在每次交付时列出。
 
 ## 9. 音乐页现状补充（2026-09-21）
 

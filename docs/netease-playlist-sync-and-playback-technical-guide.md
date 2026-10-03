@@ -1,5 +1,7 @@
 # 网易云歌单同步与站内播放：技术设计与代码说明
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 > 历史方案／设计资料，保留原文。当前实现统一见 [项目当前状态](project-status.md)（2026-10-02）；下文的技术选型、待实现事项和阶段状态只代表编写时点。
 
 日期：2026-09-30。适用项目：本仓库 Go 后端与 Vue 前端。
@@ -291,8 +293,8 @@ go vet ./...
 go build ./...
 
 # frontend
-npm run test:music
-npm run type-check
+pnpm run test:music
+pnpm run type-check
 ```
 
 数据库集成需单独设置已核实的测试库连接；未配置导致 SKIP 不能算通过。不要把上述普通测试命令当作真实上游同步或浏览器播放证据。

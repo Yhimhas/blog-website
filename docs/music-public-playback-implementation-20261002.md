@@ -1,5 +1,7 @@
 # 公开播放改造实施与验收
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 日期：2026-10-02（Asia/Shanghai）。依据 [代码审计](music-public-playback-code-audit-20261002.md)，本轮完成 A–D 的代码和受控测试，以及 E 的独立 PostgreSQL、Nginx、音频与浏览器验收。用户确认尚未配置账号 Cookie，因此真实账号权益、会员音源和凭据在线轮换尚未实测。生产入口未启用本次版本。
 
 ## 已实现的行为
