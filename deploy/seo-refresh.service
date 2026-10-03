@@ -1,0 +1,15 @@
+# User unit: paths are relative to the user's home via the %h specifier.
+[Unit]
+Description=Refresh blog SEO static release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/blog-web/blog-website
+EnvironmentFile=%h/blog-web/seo-refresh.env
+ExecStart=%h/blog-web/bin/seo-refresh
+TimeoutStartSec=31min
+KillMode=control-group
+UMask=0022
+NoNewPrivileges=true

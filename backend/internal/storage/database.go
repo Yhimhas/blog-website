@@ -28,5 +28,9 @@ func Ready(ctx context.Context, db *gorm.DB) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Check required tables as well as connectivity: an unmigrated database is not ready.
-	return db.WithContext(ctx).Exec("SELECT admin_users.role, music_items.public_media_kind FROM posts, post_revisions, post_revision_tags, sessions, music_sources, daily_recommendations, admin_users, music_items, music_playback_checks, music_playback_control LIMIT 0").Error
+	if err := db.WithContext(ctx).Exec("SELECT admin_users.role, music_items.public_media_kind FROM posts, post_revisions, post_revision_tags, sessions, music_sources, daily_recommendations, admin_users, music_items, music_playback_checks, music_playback_control LIMIT 0").Error; err != nil {
+		return err
+	}
+	var revision int64
+	return db.WithContext(ctx).Raw("SELECT revision FROM seo_publication WHERE singleton = true").Row().Scan(&revision)
 }

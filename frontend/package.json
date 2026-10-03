@@ -13,6 +13,7 @@
     "test:music": "node --experimental-strip-types --test scripts/music-api.test.mjs scripts/music-library.test.mjs scripts/music-recommendations.test.mjs scripts/music-daily.test.mjs scripts/music-playback.test.mjs scripts/music-view.test.mjs",
     "test:blog": "node --experimental-strip-types --test scripts/blog-api.test.mjs",
     "test:seo": "node --experimental-strip-types --test scripts/seo.test.mjs",
+    "test:seo:build": "node --experimental-strip-types --test scripts/seo-build.test.mjs",
     "type-check": "vue-tsc --build",
     "sync:music": "node scripts/sync-bilibili.mjs"
   },

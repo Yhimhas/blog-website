@@ -1,6 +1,6 @@
 # Go 后端
 
-当前能力与证据边界统一见 [项目当前状态](../docs/project-status.md)。当前包含迁移 000005、文章修订与分类标签管理、完整歌单同步和公开播放。
+当前能力与证据边界统一见 [项目当前状态](../docs/project-status.md)。当前包含迁移 000006、文章修订与分类标签管理、SEO 自动刷新、完整歌单同步和公开播放。
 
 当前使用你已安装的 **Go 1.27.1**，保留原 `go.mod` 版本修改。正式服务为 Gin + GORM + PostgreSQL，数据库结构使用嵌入的版本化 SQL 和 golang-migrate 显式创建。无自动迁移、无默认管理密码、无静默内存回退。
 
@@ -9,6 +9,10 @@
 本机数据库测试需显式配置独立 TEST_DATABASE_URL，未配置时会 SKIP。此前隔离服务器已验证完整歌单同步、数据库集成与公开样本播放；当前版本生产上线、备份恢复及新增行为的完整验收仍需落实，具体范围见状态文档。
 
 ## 启动正式后端
+
+迁移 `000006_seo_publication` 在文章事务中持久记录公开内容版本；发布、发布修订和归档后，由独立 `cmd/seo-refresh` 和 systemd timer 自动重建并原子切换 Linux 静态目录。保存草稿/修订不触发；失败保留旧目录，重启后继续处理 pending。API 本身不启动构建进程。
+
+公开 `GET /api/v1/seo/revision` 返回不可缓存的 sourceId/字符串 revision，管理员 `GET /api/v1/admin/seo` 查看目标/已发布版本、时间及失败信息。安装、互斥、共享资源、源码强制发布及回退见 [SEO 自动刷新操作说明](../docs/seo-auto-refresh.md)。Worker 与 API 必须使用同一数据库。部署模板需在服务器安装启用后才生效。
 
 先安装 PostgreSQL，在本地建立专用 `blog_user` 角色及其拥有的 `blog` 数据库。不要复用生产库进行测试。`.env.example` 仅说明变量，程序不会自动加载 `.env`。
 
@@ -63,7 +67,7 @@ PATCH 必须提交 version；省略字段不变，`categoryId:null` 清空分类
 
 ### 日常管理与修订草稿
 
-部署此版本前，在 `backend` 目录执行 `go run ./cmd/manage migrate`，应用 `000005_post_revisions.up.sql`，然后更新后端和前端。迁移只新增修订表，不改写已有文章。未迁移时 `/ready` 返回 503。
+部署此版本前，在 `backend` 目录执行 `go run ./cmd/manage migrate`，应用 `000005_post_revisions.up.sql` 和 `000006_seo_publication.up.sql`，然后更新后端和前端。新增修订表、SEO 状态与事务 trigger，不改写已有文章；首次 SEO 状态为 pending。未迁移时 `/ready` 返回 503。
 
 后台支持全部、草稿、已发布、已归档筛选。归档停止公开访问，保留文章和待发布修订；重新发布保留首次发布时间。存在未保存输入时须先保存再归档。
 

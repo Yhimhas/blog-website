@@ -4,17 +4,32 @@ import { resolve } from 'node:path'
 import { articleSeo, escapeHtml, publicPages, routeSeo, seoHead, siteOrigin, type SeoPage, type SeoArticle } from '../src/seo.ts'
 import { renderMarkdown } from '../src/markdown.ts'
 
-export async function loadPublicPosts(origin: string, fetcher: typeof fetch = fetch): Promise<SeoArticle[]> {
+export interface PublicRevision { revision: string; sourceId: string }
+
+async function request<T>(origin: string, path: string, fetcher: typeof fetch): Promise<T> {
+  const response = await fetcher(`${origin}/api/v1${path}`, { signal: AbortSignal.timeout(15000), redirect: 'error', cache: 'no-store' })
+  if (!response.ok) throw new Error(`SEO 公开 API 请求失败 (${response.status}): ${path}`)
+  return await response.json() as T
+}
+
+export async function loadPublicRevision(origin: string, fetcher: typeof fetch = fetch): Promise<PublicRevision> {
+  const { data } = await request<{ data: PublicRevision }>(origin, '/seo/revision', fetcher)
+  if (!data || typeof data.revision !== 'string' || !/^[1-9][0-9]*$/.test(data.revision) ||
+    typeof data.sourceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(data.sourceId)) throw new Error('SEO 公开版本格式无效')
+  return data
+}
+
+function sameRevision(a: PublicRevision, b: PublicRevision) {
+  if (a.revision !== b.revision || a.sourceId !== b.sourceId) throw new Error('构建期间公开内容变化，请重新构建')
+}
+
+export async function loadPublicSnapshot(origin: string, fetcher: typeof fetch = fetch): Promise<PublicRevision & { posts: SeoArticle[] }> {
+  const revision = await loadPublicRevision(origin, fetcher)
   const posts: SeoArticle[] = []
   const seen = new Set<string>()
   let total: number | undefined
-  async function request<T>(path: string): Promise<T> {
-    const response = await fetcher(`${origin}/api/v1${path}`, { signal: AbortSignal.timeout(15000), redirect: 'error' })
-    if (!response.ok) throw new Error(`SEO 公开 API 请求失败 (${response.status}): ${path}`)
-    return await response.json() as T
-  }
   for (let page = 1; ; page++) {
-    const result = await request<{ data: { slug: string }[]; pagination: { total: number } }>(`/posts?page=${page}&pageSize=50`)
+    const result = await request<{ data: { slug: string }[]; pagination: { total: number } }>(origin, `/posts?page=${page}&pageSize=50`, fetcher)
     if (!Array.isArray(result.data) || !Number.isSafeInteger(result.pagination?.total) || result.pagination.total < 0) throw new Error('SEO 文章列表格式无效')
     if (total !== undefined && total !== result.pagination.total) throw new Error('构建期间文章列表变化，请重新构建')
     total = result.pagination.total as number
@@ -22,14 +37,21 @@ export async function loadPublicPosts(origin: string, fetcher: typeof fetch = fe
     for (const item of result.data) {
       if (typeof item.slug !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(item.slug) || seen.has(item.slug)) throw new Error('SEO 文章 slug 无效或重复')
       seen.add(item.slug)
-      const { data } = await request<{ data: SeoArticle }>(`/posts/${encodeURIComponent(item.slug)}`)
+      const { data } = await request<{ data: SeoArticle }>(origin, `/posts/${encodeURIComponent(item.slug)}`, fetcher)
       if (!data || data.slug !== item.slug || !(['title', 'summary', 'contentMarkdown'] as const).every(key => typeof data[key] === 'string') ||
         !(['publishedAt', 'updatedAt'] as const).every(key => typeof data[key] === 'string' && Number.isFinite(Date.parse(data[key])))) throw new Error('SEO 文章详情格式无效')
       posts.push(data)
     }
-    if (posts.length === total) return posts
+    if (posts.length === total) {
+      sameRevision(revision, await loadPublicRevision(origin, fetcher))
+      return { ...revision, posts }
+    }
     if (!result.data.length || posts.length > total) throw new Error('SEO 文章分页不完整')
   }
+}
+
+export async function loadPublicPosts(origin: string, fetcher: typeof fetch = fetch): Promise<SeoArticle[]> {
+  return (await loadPublicSnapshot(origin, fetcher)).posts
 }
 
 export function renderPage(template: string, page: SeoPage, origin: string, body: string) {
@@ -67,6 +89,7 @@ export function seoAssets(template: string, origin: string, posts: SeoArticle[],
 export function seoPlugin(env: Record<string, string>, mode: string): Plugin {
   let origin = ''
   let preview = false
+  let snapshot: PublicRevision | undefined
   return {
     name: 'public-page-seo', enforce: 'post', apply: 'build',
     configResolved(config) {
@@ -80,12 +103,20 @@ export function seoPlugin(env: Record<string, string>, mode: string): Plugin {
     async generateBundle(_, bundle) {
       const index = bundle['index.html']
       if (!index || index.type !== 'asset') throw new Error('缺少 Vite index.html 构建产物')
-      const posts = env.SEO_API_ORIGIN ? await loadPublicPosts(siteOrigin(env.SEO_API_ORIGIN)) : []
-      const assets = seoAssets(String(index.source), origin, posts, preview)
+      const content = env.SEO_API_ORIGIN ? await loadPublicSnapshot(siteOrigin(env.SEO_API_ORIGIN)) : undefined
+      snapshot = content
+      const assets = seoAssets(String(index.source), origin, content?.posts || [], preview)
+      const files = [...new Set([...Object.keys(bundle), ...Object.keys(assets), 'yhimhas-logo.jpg'])].sort()
       index.source = assets['index.html']!
       for (const [fileName, source] of Object.entries(assets)) {
         if (fileName !== 'index.html') this.emitFile({ type: 'asset', fileName, source })
       }
+      this.emitFile({ type: 'asset', fileName: 'seo-release.json', source: JSON.stringify({
+        revision: content?.revision || '0', sourceId: content?.sourceId || '', origin, preview, files,
+      }) })
+    },
+    async writeBundle() {
+      if (snapshot && env.SEO_API_ORIGIN) sameRevision(snapshot, await loadPublicRevision(siteOrigin(env.SEO_API_ORIGIN)))
     },
   }
 }

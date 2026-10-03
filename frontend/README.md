@@ -23,7 +23,7 @@
 3. 登录 → 新建文章 → 输入标题、唯一 slug、Markdown → 保存文章。此时公开地址应为 404。
 4. 点击「保存并发布」，再点击公开访问链接。无登录浏览器也应能访问 `/blog/<slug>`，并在列表找到文章。
 5. 已发布文章保存修改进入修订草稿，再次发布才更新公开版本。修改提交 version，409 时保留输入并提示重新读取。归档保留文章与修订，可再次发布；后台支持按状态筛选。
-6. 发布、更新或归档后按 [SEO 流程](../docs/seo-and-sharing.md) 重新构建并切换静态发布目录。API 变更不会自动刷新已发布 HTML。
+6. 按 [SEO 流程](../docs/seo-auto-refresh.md) 安装独立 Worker/timer 后，发布、发布修订和归档自动刷新静态目录；保存未发布修订不触发。API 成功与静态切换之间有构建延迟，可通过管理员 `/api/v1/admin/seo` 查看确认版本和失败状态。
 
 Cookie 为 HttpOnly，CSRF token 仅放内存。刷新恢复会话；401/CSRF 失效时重新登录，编辑内容暂留页面。内容不写 localStorage，刷新/关闭前提供未保存提示。分类和标签可留空，也可在后台新增、编辑或删除；被文章或修订引用的项目不能删除。
 
@@ -33,7 +33,7 @@ Cookie 为 HttpOnly，CSRF token 仅放内存。刷新恢复会话；401/CSRF �
 
 ### 验证与部署
 
-运行 `npm run test:blog`、`npm run test:music`、`npm run test:seo` 和 `npm run type-check`。正式构建需先按下方 SEO 说明配置环境和新输出目录。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染；不等于真实数据库或浏览器端到端验收。未配置数据库时 PostgreSQL 集成测试会 SKIP。
+运行 `npm run test:blog`、`npm run test:music`、`npm run test:seo` 和 `npm run type-check`。`npm run test:seo:build` 使用本机临时 API 验证真实 production 构建中的发布、更新、归档及过期构建拒绝，保留所有输出；不替代 PostgreSQL/Linux/systemd 验收。正式构建需先配置环境和新输出目录。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染。未配置数据库时 PostgreSQL 集成测试会 SKIP。
 
 生产环境将同域 `/api/` 代理到 Go，保留 Origin 和 Cookie；前端使用构建生成的页面 HTML，未知路径返回 404。正式构建需要 VITE_SITE_URL、SEO_API_ORIGIN 和新的输出目录，详细步骤见 [SEO 与链接分享](../docs/seo-and-sharing.md)。后端配置 HTTPS ALLOWED_ORIGIN、APP_ENV=production 和 Secure Cookie。Vite dev proxy 不随构建部署。
 
