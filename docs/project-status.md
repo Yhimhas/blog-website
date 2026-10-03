@@ -45,7 +45,7 @@
 | 账号权限 | 隔离 PostgreSQL 角色迁移、权限拒绝、降权、退出和会话失效测试 | 已部署当前生产版本；见 [记录](user-login-validation.md) |
 | 完整歌单 | 隔离服务器实际同步目标歌单 267 首，分页读回及顺序验证通过 | 267 首全部完整可播；见 [记录](netease-playlist-server-validation-20261002.md) |
 | 公开播放 | 隔离 PostgreSQL/race、独立 Nginx→Go→FFmpeg 媒体管道与浏览器样本播放 | 真实会员账号、生产 CDN、手机和长时间压力验证通过；见 [记录](music-public-playback-implementation-20261002.md) |
-| SEO | 本地 production 构建中的发布/更新/归档与过期拒绝；服务器 PostgreSQL/Linux race 28 项零 SKIP、目录切换与恢复、vet/构建及前端检查 | 实际 CLI/systemd/Nginx 整套闭环、生产入口、真实收录和分享平台缓存已验收；见 [记录](seo-server-validation-20261003.md) |
+| SEO | 核心 PostgreSQL/Linux race 28 项零 SKIP；当前服务器 pnpm 的 8 项 SEO/36 项博客测试及实际 API→timer→production 构建→Nginx 闭环，包含过期拒绝、重试、归档和恢复 | 正式入口已启用、HTTPS/CDN、真实收录与分享平台缓存已验收；见 [最新记录](seo-pnpm-server-validation-20261003.md) |
 | 最新博客与播放器 | 归档/分类标签/修订及跨路由/定位代码和回归用例已入库 | 旧隔离记录已覆盖迁移 000005 和所有最新行为；须按实际测试范围验收 |
 
 上一轮整体检查时前端 77 项测试、构建及后端测试/vet 通过，但该结果早于上述最新 SEO、博客管理和定位提交，不作为当前版本完整验收结论。本机未配置测试库时数据库测试会 SKIP；SKIP 不是数据库测试通过。
@@ -56,7 +56,8 @@
 
 - [ ] 固化完整启动、Nginx、HTTPS、自启、健康检查、迁移与发布回退流程；现有 [媒体片段](../deploy/music-streams.nginx.conf) 和 [SEO 片段](../deploy/seo.nginx.conf) 需结合实际入口配置。
 - [ ] 对当前版本执行数据库集成与迁移验收，覆盖修订草稿、归档和分类标签引用保护。
-- [ ] 验收实际 CLI/systemd/Nginx 整套 SEO 闭环并启用生产入口；PostgreSQL 并发保护和 Linux 切换已隔离验收，真实 Vite 构建已本地验证。
+- [x] 隔离验收实际 CLI/systemd/pnpm/Nginx 整套 SEO 闭环，覆盖发布、修订、构建中更新、重复任务、失败重试与归档恢复。
+- [ ] 按生产配置启用 SEO Worker/timer 和真实入口，核验固定 pnpm/PATH、冻结锁文件安装、原站点 assets 迁移与 CDN 缓存。
 - [ ] 完成数据库备份及独立环境恢复演练，并明确异机备份、保留周期和恢复步骤。
 - [ ] 在正式反代入口验证播放 Cookie、可信代理、API 与媒体路由、限流及日志；复验跨页播放与定位。
 - [ ] 完成手机、真实扬声器、弱网、长时间播放及并发验收。
@@ -69,7 +70,7 @@
 - [ ] 如启用账号音源，完成真实账号受控抽样及对应公开授权配置。
 - [ ] 按实际需求决定跨设备收藏、公开注册等扩展，不将普通账号登录视作这些功能已经具备。
 
-生产入口尚未有当前版本的完整验收证据。2026-10-03 SSH 续验通过 IPv6 连通，完成隔离 PostgreSQL/Linux 测试，未修改正式部署；后续连接再次超时，不能用作服务器故障结论。范围与保留产物见 [服务器记录](seo-server-validation-20261003.md)。
+生产入口尚未有当前版本的完整验收证据。2026-10-03 后续 SSH 已通过 IPv4 连通，完成隔离 pnpm/CLI/systemd/Nginx 闭环，未修改正式部署，测试服务已停止。此前连接超时仅代表当时观察；最新范围与保留产物见 [服务器续验](seo-pnpm-server-validation-20261003.md)。
 
 ## 5. 文档阅读顺序
 
