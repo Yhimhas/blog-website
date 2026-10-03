@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, RouterLink, useRouter } from 'vue-router'
 import { ApiError, blogApi, type AdminPost, type PostInput, type Term, type TermKind } from '../blogApi'
 import { renderMarkdown } from '../markdown'
 import { authSession } from '../authSession'
+import { useSeoPublication } from '../useSeoPublication'
+import SeoPublicationStatus from '../components/SeoPublicationStatus.vue'
 
 const checking = ref(true)
 const router = useRouter()
 const authenticated = ref(false)
+const staticPages = useSeoPublication({ onUnauthorized: handleError })
+watch(authenticated, active => { if (active) void staticPages.start(); else staticPages.stop() }, { flush: 'sync' })
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -121,7 +125,9 @@ async function save(publish = false) {
     if (publish) {
       result = await blogApi.publish(result.id, result.version)
       fill(result)
-      notice.value = '发布成功，可以通过下方链接公开访问。'
+      notice.value = '文章已发布到数据库，静态页面更新情况请查看下方状态。'
+      staticPages.markPending()
+      void staticPages.refresh()
     }
     await refreshList()
   })
@@ -129,10 +135,12 @@ async function save(publish = false) {
 async function archive() {
   const post = selected.value
   if (!post || busy.value || dirty.value || conflict.value) return
-  if (!window.confirm('确认归档这篇文章？归档后无法公开访问，内容和修订草稿将保留，可再次发布。')) return
+  if (!window.confirm('确认归档这篇文章？公开 API 将隐藏文章，旧静态页面要等更新完成才会撤回。内容和修订草稿将保留，可再次发布。')) return
   await run(async () => {
     fill(await blogApi.archive(post.id, post.version))
-    notice.value = '文章已归档，已停止公开访问。'
+    notice.value = '文章已归档，公开 API 已隐藏；旧静态页面是否撤回请查看下方状态。'
+    staticPages.markPending()
+    void staticPages.refresh()
     await refreshList()
   })
 }
@@ -199,6 +207,7 @@ async function logout() {
     <p v-if="!checking && !authenticated"><RouterLink to="/login?next=/admin">前往用户登录</RouterLink></p>
     <template v-if="!checking && authenticated">
       <div class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button @click="openTermManager">分类与标签管理</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
+      <SeoPublicationStatus :state="staticPages.state.value" :loading="staticPages.loading.value" @refresh="staticPages.refresh" />
       <div class="admin-layout">
         <aside aria-label="管理文章列表">
           <label>文章状态<select :value="statusFilter" :disabled="busy" @change="filterPosts"><option value="">全部文章</option><option value="draft">草稿</option><option value="published">已发布</option><option value="archived">已归档</option></select></label>
@@ -212,9 +221,9 @@ async function logout() {
         <form v-if="editing" @submit.prevent="save()">
           <fieldset :disabled="busy">
             <legend>{{ selected ? statusNames[selected.status] : '新草稿' }}{{ dirty ? ' · 未保存' : '' }}</legend>
-            <p v-if="selected?.status === 'published'">这篇文章已公开。保存仅更新修订草稿；审核预览并确认发布后，公开内容才会更新。</p>
+            <p v-if="selected?.status === 'published'">这篇文章已发布到数据库。保存仅更新修订草稿；确认发布后更新公开内容，静态页面以更新状态为准。</p>
             <p v-if="selected?.revision" role="status">正在编辑待发布修订 · 最近保存 {{ new Date(selected.revision.updatedAt).toLocaleString('zh-CN') }}</p>
-            <p v-if="selected?.status === 'archived'">这篇文章已归档，不可公开访问。确认发布后可恢复访问。</p>
+            <p v-if="selected?.status === 'archived'">这篇文章已归档，公开 API 已隐藏。静态更新完成前，旧页面仍可能公开访问；确认发布可恢复数据库公开版本。</p>
             <label>标题<input v-model="form.title" required maxlength="160" /></label>
             <label>slug · 公开地址<input v-model="form.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" :readonly="!!selected" placeholder="my-first-post" /><small>仅小写英文、数字和连字符；创建后不可修改。</small></label>
             <label>摘要<textarea v-model="form.summary" maxlength="500" rows="3" /></label>

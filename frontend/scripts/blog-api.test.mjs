@@ -125,3 +125,33 @@ test('referenced term deletion exposes actionable error', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => Response.json({ error: { code: 'TERM_IN_USE', message: '仍有文章使用此标签' } }, { status: 409 }))
   await assert.rejects(blogApi.deleteTerm('tags', 'go'), e => e.status === 409 && e.code === 'TERM_IN_USE')
 })
+
+const publication = { sourceId: '11111111-2222-3333-4444-555555555555', revision: '9007199254740993', appliedRevision: '9007199254740992', lastAttemptAt: null, publishedAt: '2026-10-03T00:00:00Z', lastError: '' }
+
+test('administrator publication status uses uncached same-origin GET and string versions', async t => {
+  const controller = new AbortController()
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, '/api/v1/admin/seo')
+    assert.equal(options.method, 'GET')
+    assert.equal(options.credentials, 'same-origin')
+    assert.equal(options.cache, 'no-store')
+    assert.equal(options.body, undefined)
+    assert.equal(options.signal.aborted, false)
+    return Response.json({ data: publication })
+  })
+  assert.deepEqual(await blogApi.seoPublication(controller.signal), publication)
+})
+
+test('invalid or unavailable publication receipts cannot confirm static deployment', async t => {
+  const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({ data: publication }))
+  for (const data of [null, {}, { ...publication, revision: 3 }, { ...publication, revision: '0' },
+    { ...publication, sourceId: '' }, { ...publication, lastAttemptAt: 'bad-date' },
+    { ...publication, appliedRevision: '9007199254740994' }, { ...publication, lastError: null }]) {
+    mock.mock.mockImplementation(async () => Response.json({ data }))
+    await assert.rejects(blogApi.seoPublication(), e => e.code === 'INVALID_RESPONSE')
+  }
+  for (const status of [401, 403, 404, 503]) {
+    mock.mock.mockImplementation(async () => Response.json({ error: { code: 'STATUS_UNAVAILABLE' } }, { status }))
+    await assert.rejects(blogApi.seoPublication(), e => e.status === status)
+  }
+})
