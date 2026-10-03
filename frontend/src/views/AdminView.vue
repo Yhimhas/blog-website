@@ -13,6 +13,8 @@ const authenticated = ref(false)
 const staticPages = useSeoPublication({ onUnauthorized: handleError })
 watch(authenticated, active => { if (active) void staticPages.start(); else staticPages.stop() }, { flush: 'sync' })
 const busy = ref(false)
+const username = ref(authSession.user.value?.username ?? '')
+const password = ref('')
 const error = ref('')
 const notice = ref('')
 const conflict = ref(false)
@@ -39,7 +41,7 @@ const termItems = computed(() => termKind.value === 'categories' ? categories.va
 const termLabel = computed(() => termKind.value === 'categories' ? '分类' : '标签')
 const preview = computed(() => renderMarkdown(form.contentMarkdown))
 const statusNames = { draft: '草稿', published: '已发布', archived: '已归档' }
-const allowedToLeave = () => !busy.value && (!(dirty.value || termDirty.value) || window.confirm('有尚未保存的文章或分类标签修改，确定离开吗？'))
+const allowedToLeave = () => !busy.value && (!(dirty.value || termDirty.value) || window.confirm('有尚未保存的文章或分类标签修改，离开将丢失这些输入。请先保存或导出备份，确定离开吗？'))
 onBeforeRouteLeave(allowedToLeave)
 function beforeUnload(event: BeforeUnloadEvent) {
   if (dirty.value || termDirty.value || busy.value) { event.preventDefault(); event.returnValue = '' }
@@ -48,9 +50,10 @@ onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void re
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 function handleError(e: unknown, scope: 'post' | 'term' = 'post') {
   if (e instanceof ApiError && (e.status === 401 || e.code === 'CSRF_FAILED' || e.code === 'ADMIN_REQUIRED')) {
+    username.value = authSession.user.value?.username ?? username.value
     authenticated.value = false
     authSession.user.value = null
-    error.value = '会话已过期，请重新登录。当前编辑内容仍保留在此页面。'
+    error.value = '会话已失效，请在本页重新登录。当前编辑内容仍保留，可继续编辑、复制或导出；离开或刷新页面前请先备份。'
   } else if (e instanceof ApiError && e.status === 409) {
     if (scope === 'term') {
       error.value = e.code === 'TERM_IN_USE' ? e.message : '这个分类或标签 slug 已被使用，请修改后重试。'
@@ -62,6 +65,7 @@ function handleError(e: unknown, scope: 'post' | 'term' = 'post') {
 }
 async function run(action: () => Promise<void>, scope: 'post' | 'term' = 'post') {
   if (busy.value) return
+  if (!authenticated.value) { error.value = '请先在本页重新登录，当前编辑内容仍保留。'; return }
   busy.value = true; error.value = ''; notice.value = ''
   try { await action() } catch (e) { handleError(e, scope) } finally { busy.value = false }
 }
@@ -84,6 +88,43 @@ async function restore() {
   try { await authSession.restore(); authenticated.value = authSession.isAdmin.value; if (authenticated.value) await loadWorkspace() }
   catch (e) { if (!(e instanceof ApiError && e.status === 401)) handleError(e) }
   finally { checking.value = false }
+}
+async function login() {
+  if (busy.value) return
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    await authSession.login(username.value, password.value)
+    if (!authSession.isAdmin.value) {
+      error.value = '当前账号没有文章管理权限，请使用管理员账号重新登录。当前编辑内容已保留。'
+      return
+    }
+    authenticated.value = true
+    // Refresh lists without filling either editor or resetting version/dirty state.
+    try {
+      await loadWorkspace()
+      if (authenticated.value) notice.value = editing.value || termEditing.value ? '已重新登录，当前编辑内容已保留，请继续编辑并手动保存。' : '登录成功。'
+    } catch (e) { handleError(e) }
+  } catch (e) { error.value = e instanceof Error ? e.message : '登录失败，请重试。' }
+  finally { password.value = ''; busy.value = false }
+}
+function exportBackup() {
+  if (!editing.value && !termEditing.value) return
+  try {
+    const exportedAt = new Date().toISOString()
+    const backup = {
+      schemaVersion: 1, exportedAt,
+      article: editing.value ? { id: selected.value?.id ?? null, version: selected.value?.version ?? null, ...form, tagIds: [...form.tagIds] } : null,
+      term: termEditing.value ? { kind: termKind.value, id: termId.value ?? null, ...termForm } : null,
+      categories: categories.value, tags: tags.value,
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' }))
+    try {
+      const link = document.createElement('a')
+      link.href = url; link.download = `admin-edit-backup-${exportedAt.replace(/[:.]/g, '-')}.json`
+      link.click()
+      notice.value = '已发起编辑内容备份下载，请确认文件已保存。备份不代表已保存到服务器。'
+    } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000) }
+  } catch { error.value = '无法导出备份，请先复制当前编辑内容，再重新登录。' }
 }
 function fill(post?: AdminPost) {
   selected.value = post
@@ -204,12 +245,23 @@ async function logout() {
     <p v-if="checking" role="status">正在检查登录状态…</p>
     <p v-if="error" role="alert" class="admin-error">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <p v-if="!checking && !authenticated"><RouterLink to="/login?next=/admin">前往用户登录</RouterLink></p>
-    <template v-if="!checking && authenticated">
-      <div class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button @click="openTermManager">分类与标签管理</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
-      <SeoPublicationStatus :state="staticPages.state.value" :loading="staticPages.loading.value" @refresh="staticPages.refresh" />
-      <div class="admin-layout">
-        <aside aria-label="管理文章列表">
+    <form v-if="!checking && !authenticated" class="admin-login" @submit.prevent="login">
+      <h2>在本页重新登录</h2>
+      <p v-if="editing || termEditing">无需离开页面，登录后可继续保存当前输入。</p>
+      <label>用户名<input v-model="username" autocomplete="username" required :disabled="busy" /></label>
+      <label>密码<input v-model="password" type="password" autocomplete="current-password" required :disabled="busy" /></label>
+      <button :disabled="busy">{{ busy ? '登录中…' : '登录并继续编辑' }}</button>
+    </form>
+    <template v-if="!checking && (authenticated || editing || termEditing)">
+      <div v-if="authenticated" class="admin-actions"><button :disabled="busy" @click="newPost">新建文章</button><button @click="openTermManager">分类与标签管理</button><button :disabled="busy" @click="run(loadWorkspace)">刷新列表与分类</button><button :disabled="busy" @click="logout">退出登录</button></div>
+      <div v-if="editing || termEditing" class="admin-backup">
+        <p v-if="!authenticated">编辑内容尚在本页，仍可编辑和复制；保存、发布和其他服务器操作需要重新登录。</p>
+        <button type="button" @click="exportBackup">导出当前编辑内容（JSON）</button>
+        <p><small>备份包含当前文章字段、分类标签及其未保存的修改。离开或刷新页面前，请确认下载已完成。</small></p>
+      </div>
+      <SeoPublicationStatus v-if="authenticated" :state="staticPages.state.value" :loading="staticPages.loading.value" @refresh="staticPages.refresh" />
+      <div class="admin-layout" :class="{ 'admin-layout-retained': !authenticated }">
+        <aside v-if="authenticated" aria-label="管理文章列表">
           <label>文章状态<select :value="statusFilter" :disabled="busy" @change="filterPosts"><option value="">全部文章</option><option value="draft">草稿</option><option value="published">已发布</option><option value="archived">已归档</option></select></label>
           <p>共 {{ total }} 篇</p>
           <p v-if="!posts.length">当前状态暂无文章。</p>
@@ -230,7 +282,7 @@ async function logout() {
             <label>分类<select v-model="form.categoryId"><option :value="null">未分类</option><option v-for="term in categories" :key="term.id" :value="term.id">{{ term.name }}</option></select></label>
             <div class="admin-tags"><span>标签</span><label v-for="tag in tags" :key="tag.id"><input v-model="form.tagIds" type="checkbox" :value="tag.id" />{{ tag.name }}</label><small v-if="!tags.length">暂无标签，可直接保存和发布。</small></div>
             <label>Markdown 正文<textarea v-model="form.contentMarkdown" rows="18" class="admin-markdown" spellcheck="false" /></label>
-            <div class="admin-actions"><button type="submit" :disabled="conflict && !!selected">{{ busy ? '处理中…' : selected?.status === 'published' || selected?.revision ? '保存修订草稿' : '保存文章' }}</button><button type="button" :disabled="conflict && !!selected" @click="save(true)">{{ selected?.status === 'archived' ? '确认重新发布' : '确认发布' }}</button><button v-if="selected && selected.status !== 'archived'" type="button" :disabled="dirty || conflict" @click="archive">归档文章</button><button v-if="conflict && selected" type="button" @click="reload">重新读取服务器版本</button></div>
+            <div class="admin-actions"><button type="submit" :disabled="!authenticated || (conflict && !!selected)">{{ busy ? '处理中…' : selected?.status === 'published' || selected?.revision ? '保存修订草稿' : '保存文章' }}</button><button type="button" :disabled="!authenticated || (conflict && !!selected)" @click="save(true)">{{ selected?.status === 'archived' ? '确认重新发布' : '确认发布' }}</button><button v-if="selected && selected.status !== 'archived'" type="button" :disabled="!authenticated || dirty || conflict" @click="archive">归档文章</button><button v-if="conflict && selected" type="button" :disabled="!authenticated" @click="reload">重新读取服务器版本</button></div>
             <small v-if="selected && dirty">归档前请先保存当前修改。</small>
             <RouterLink v-if="selected?.status === 'published'" :to="`/blog/${selected.slug}`">公开访问：/blog/{{ selected.slug }} ↗</RouterLink>
           </fieldset>
@@ -238,17 +290,17 @@ async function logout() {
         </form>
         <p v-else>选择文章继续编辑，或新建一篇草稿。</p>
       </div>
-      <details ref="termPanel" class="term-manager">
+      <details v-show="authenticated || termEditing" ref="termPanel" class="term-manager" :open="!authenticated && termEditing || undefined">
         <summary>分类与标签管理 · {{ categories.length }} 个分类 / {{ tags.length }} 个标签</summary>
         <p>名称和 slug 的修改会立即影响公开分类标签；修改 slug 后原筛选链接将不再匹配。已被文章或修订草稿使用的项目不能删除。</p>
-        <div class="admin-actions"><button :disabled="busy" :aria-pressed="termKind === 'categories'" @click="editTerm(undefined, 'categories')">管理分类</button><button :disabled="busy" :aria-pressed="termKind === 'tags'" @click="editTerm(undefined, 'tags')">管理标签</button><button :disabled="busy" @click="editTerm()">新增{{ termLabel }}</button></div>
-        <ul class="term-list"><li v-for="term in termItems" :key="term.id"><span><strong>{{ term.name }}</strong> <small>{{ term.slug }}</small></span><button :disabled="busy" @click="editTerm(term)">编辑</button><button :disabled="busy" @click="deleteTerm(term)">删除</button></li></ul>
-        <p v-if="!termItems.length">暂无{{ termLabel }}。</p>
+        <div v-if="authenticated" class="admin-actions"><button :disabled="busy" :aria-pressed="termKind === 'categories'" @click="editTerm(undefined, 'categories')">管理分类</button><button :disabled="busy" :aria-pressed="termKind === 'tags'" @click="editTerm(undefined, 'tags')">管理标签</button><button :disabled="busy" @click="editTerm()">新增{{ termLabel }}</button></div>
+        <ul v-if="authenticated" class="term-list"><li v-for="term in termItems" :key="term.id"><span><strong>{{ term.name }}</strong> <small>{{ term.slug }}</small></span><button :disabled="busy" @click="editTerm(term)">编辑</button><button :disabled="busy" @click="deleteTerm(term)">删除</button></li></ul>
+        <p v-if="authenticated && !termItems.length">暂无{{ termLabel }}。</p>
         <form v-if="termEditing" @submit.prevent="saveTerm">
           <fieldset :disabled="busy"><legend>{{ termId ? '编辑' : '新增' }}{{ termLabel }}{{ termDirty ? ' · 未保存' : '' }}</legend>
             <label>名称<input v-model="termForm.name" required maxlength="160" /></label>
             <label>slug<input v-model="termForm.slug" required maxlength="100" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="development" /></label>
-            <div class="admin-actions"><button type="submit">保存{{ termLabel }}</button><button type="button" @click="cancelTerm">取消编辑</button></div>
+            <div class="admin-actions"><button type="submit" :disabled="!authenticated">保存{{ termLabel }}</button><button type="button" @click="cancelTerm">取消编辑</button></div>
           </fieldset>
         </form>
       </details>
@@ -259,6 +311,8 @@ async function logout() {
 <style scoped>
 .admin-page { max-width: 1400px; margin: auto; }
 .admin-layout { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 32px; margin-top: 28px; }
+.admin-layout-retained { grid-template-columns: minmax(0, 1fr); }
+.admin-backup { border: 1px solid #777; padding: 16px; margin-top: 24px; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 18px 0; }
 .admin-page button { border: 1px solid #53594b; background: #d4ef37; color: #171a13; padding: 10px 16px; cursor: pointer; }
 .admin-page button:disabled { opacity: .5; cursor: not-allowed; }
