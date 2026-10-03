@@ -57,3 +57,5 @@ pnpm 11 可能在执行脚本前自动检查或安装依赖。仅复验现有依
 - Go SEO 文件系统测试及 Worker vet 通过，Linux `go build ./cmd/...` 交叉编译通过。数据库与 Linux 专属运行测试在本机跳过；未声称服务器 pnpm/systemd 已验收或部署。
 - 初次 Go 文件系统测试受沙箱重命名权限限制；在沙箱外使用明确保留目录复验通过。pnpm 验证临时关闭自动安装，没有安装依赖或变更锁文件。
 - 保留产物（相对于仓库根目录）：`frontend/dist/pnpm-unified-validation-20261003/`、`frontend/dist/seo-refresh-pnpm validation-9xPgvL/`、`../.validation-cache/pnpm-migration-seo-tests/`，以及初次沙箱测试临时目录中的 `seo-test-*` 与既有编译缓存。没有删除文件。
+
+后续服务器实际使用隔离 pnpm 11.19.0 完成 API → Worker/timer → pnpm production 构建 → Nginx 闭环；没有依赖 npm 环境结论。PATH、版本加载、复制依赖的范围、失败注入及保留产物见 [服务器续验记录](seo-pnpm-server-validation-20261003.md)。正式服务没有在本次启用。

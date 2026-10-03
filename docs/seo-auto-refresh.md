@@ -63,7 +63,7 @@
 - `npm run test:seo:build` 通过真实 Vite production 构建验证发布、更新、归档与预期失败的过期构建；核验正文、manifest 文件清单、归档后文章 HTML 缺席、sitemap 移除及旧目录保留。使用本机测试 API，测试后已停止。
 - 后端 `go test ./...`、`go vet ./...` 通过；文件系统用例覆盖不完整/预览/越界产物、普通目录保护、旧资源保留与不可变资源碰撞拒绝。Linux Worker 和 Linux 测试二进制交叉编译通过，仅编译未执行。沙箱限制回环网络与 pnpm Junction 解析，完整测试和类型检查在获准的沙箱外运行通过。
 - 本机未配置 TEST_DATABASE_URL 时 PostgreSQL 用例 SKIP，Windows 同样跳过 Linux 切换；后续服务器隔离验证实际运行 PostgreSQL/Linux race 测试，28 项通过、零 SKIP，包含事务、并发锁、互斥、失败重试、事件合并、切换和中断恢复。服务器 vet、三个后端命令构建、前端类型检查及 8 项 SEO 测试也通过，详见 [服务器记录](seo-server-validation-20261003.md)。
-- 初次 SSH 超时后，经同一服务器的 IPv6 连接成功完成上述验证；后续连接又持续超时。未改动正式部署，实际 CLI/systemd/Nginx 整套闭环仍待验收，不把 fixture 构建的 Worker 测试记作真实 Vite 服务闭环。
+- 初次 SSH 超时后，经同一服务器的 IPv6 完成核心测试；后续 pnpm 续验通过 IPv4 连通，已在独立 schema 和回环入口完成真实 CLI/systemd/Nginx 发布、修订、过期拒绝、重复 Worker、失败重试和归档闭环。详见 [pnpm 服务器验收](seo-pnpm-server-validation-20261003.md)。正式部署仍未改动。
 
 在 Linux 的独立测试库设置 `TEST_DATABASE_URL`、`ALLOW_TEST_SCHEMA_CREATE=true`，执行 `go test -race ./internal/seo ./internal/storage ./internal/platform`。每次创建并保留独立 schema，不 DROP。可设置 `SEO_TEST_OUTPUT` 指定保留文件目录；真实构建测试执行 `pnpm run test:seo:build`，所有输出保留。
 
@@ -83,3 +83,7 @@
 `npm run test:blog` 扩展至 26 项并通过，类型检查通过。新增测试覆盖状态接口的无缓存/凭据/字符串版本约定、无效响应拒绝、状态轮询、过期响应、退出/离开取消，以及真实管理页和状态组件在发布/归档、待更新与状态不可用时的呈现。状态读取失败不会覆盖数据库操作成功提示。
 
 本次仅修改前端与说明，未部署服务、未删除文件，没有新建构建目录或试验产物；更新了既有前端类型检查/Vite 缓存。此前的数据库和服务器验证范围仍以各自记录为准。
+
+### pnpm 服务器闭环续验（2026-10-03）
+
+基于 `fd80739`，服务器使用隔离 pnpm 11.19.0 完成当前类型检查、8 项 SEO 和 36 项博客测试；实际 API → timer → pnpm production 构建 → Nginx 链路通过，最终归档版本 6/6、文章 404、sitemap 移除、旧资源保留。测试 API、timer/Worker 和容器已停止；原服务 ready 与原项目保持不变。证据、环境边界和新增保留产物见 [续验记录](seo-pnpm-server-validation-20261003.md)。
