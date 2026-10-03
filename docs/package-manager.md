@@ -61,3 +61,5 @@ pnpm 11 可能在执行脚本前自动检查或安装依赖。仅复验现有依
 - 保留产物（相对于仓库根目录）：`frontend/dist/pnpm-unified-validation-20261003/`、`frontend/dist/seo-refresh-pnpm validation-9xPgvL/`、`../.validation-cache/pnpm-migration-seo-tests/`，以及初次沙箱测试临时目录中的 `seo-test-*` 与既有编译缓存。没有删除文件。
 
 后续服务器实际使用隔离 pnpm 11.19.0 完成 API → Worker/timer → pnpm production 构建 → Nginx 闭环；没有依赖 npm 环境结论。PATH、版本加载、复制依赖的范围、失败注入及保留产物见 [服务器续验记录](seo-pnpm-server-validation-20261003.md)。正式服务没有在本次启用。
+
+后续 Docker 部署已使用 pnpm 12.4.1 完成干净冻结锁文件安装、类型检查、前端回归和实际 Go Worker 构建，并上线到 Tailscale 内网。pnpm 12 的 shebang-less registry 入口由容器 launcher 适配；构建回归兼容 native 12 不提供 npm_execpath 的情况，本机 pnpm 11 JS 入口也复验通过。范围、原始测试记录和保留产物见 [Docker 部署验收](docker-deployment-validation-20261003.md)。

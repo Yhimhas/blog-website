@@ -1,0 +1,74 @@
+name: blog-production-live
+
+services:
+  api:
+    image: ${BLOG_IMAGE:?Set BLOG_IMAGE to the verified release image}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.runtime
+      network: host
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file:
+      - ${BLOG_API_ENV:?Set BLOG_API_ENV to the private API environment file}
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8081/api/v1/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+
+  seo-refresh:
+    image: ${BLOG_IMAGE:?Set BLOG_IMAGE to the verified release image}
+    command: [node, /opt/blog/start-seo-refresh.mjs]
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file:
+      - ${BLOG_SEO_ENV:?Set BLOG_SEO_ENV to the private SEO environment file}
+    volumes:
+      - ${BLOG_SITE_DIR:?Set BLOG_SITE_DIR}:/site
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "process.exit(require('fs').existsSync('/site/current/index.html')?0:1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 3
+    logging:
+      driver: json-file
+
+  nginx:
+    image: nginx:1.28-alpine
+    user: "1000:1000"
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ${BLOG_NGINX_CONF:?Set BLOG_NGINX_CONF}:/etc/nginx/nginx.conf:ro
+      - ${BLOG_TLS_DIR:?Set BLOG_TLS_DIR}:/tls:ro
+      - ${BLOG_SITE_DIR:?Set BLOG_SITE_DIR}:/site:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/cache/nginx:size=32m,mode=1777
+      - /var/run:size=1m,mode=1777
+    depends_on:
+      seo-refresh: {condition: service_healthy}
+    logging:
+      driver: json-file
