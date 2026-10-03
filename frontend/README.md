@@ -1,5 +1,7 @@
 # Vue 前端
 
+> 包管理器统一使用 **pnpm**。安装、开发、测试与构建遵循 [包管理约定](../docs/package-manager.md)；历史 npm 命令不作为后续操作指引。
+
 当前能力与剩余验收统一见 [项目当前状态](../docs/project-status.md)。
 
 ## 每日推荐 API
@@ -19,7 +21,7 @@
 ### 本地闭环
 
 1. 按 [后端说明](../backend/README.md) 配置 PostgreSQL、迁移并创建站长账号，以 `DEMO_MODE=false` 启动 Go API。内存 Demo 不支持后台。
-2. 在 frontend 运行 `npm run dev -- --host localhost --port 5173 --strictPort`，打开 `http://localhost:5173/admin`。后端 `ALLOWED_ORIGIN` 须为相同的 `http://localhost:5173`，不能混用 127.0.0.1 或其他端口。
+2. 在 frontend 运行 `pnpm run dev --host localhost --port 5173 --strictPort`，打开 `http://localhost:5173/admin`。后端 `ALLOWED_ORIGIN` 须为相同的 `http://localhost:5173`，不能混用 127.0.0.1 或其他端口。
 3. 登录 → 新建文章 → 输入标题、唯一 slug、Markdown → 保存文章。此时公开地址应为 404。
 4. 点击「确认发布」，确认数据库操作成功及页面的静态更新状态。开发 SPA 可以通过公开 API 查看文章；生产地址直接打开须等静态状态确认已更新，新文章在更新前可能返回 404。
 5. 已发布文章保存修改进入修订草稿，再次发布才更新公开版本。修改提交 version，409 时保留输入并提示重新读取。归档保留文章与修订，可再次发布；后台支持按状态筛选。
@@ -33,7 +35,7 @@ Cookie 为 HttpOnly，CSRF token 仅放内存。刷新恢复会话；401/CSRF �
 
 ### 验证与部署
 
-运行 `npm run test:blog`、`npm run test:music`、`npm run test:seo` 和 `npm run type-check`。`npm run test:seo:build` 使用本机临时 API 验证真实 production 构建中的发布、更新、归档及过期构建拒绝，保留所有输出；不替代 PostgreSQL/Linux/systemd 验收。正式构建需先配置环境和新输出目录。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染。未配置数据库时 PostgreSQL 集成测试会 SKIP。
+运行 `pnpm run test:blog`、`pnpm run test:music`、`pnpm run test:seo` 和 `pnpm run type-check`。`pnpm run test:seo:build` 使用本机临时 API 验证真实 production 构建中的发布、更新、归档及过期构建拒绝，保留所有输出；不替代 PostgreSQL/Linux/systemd 验收。正式构建需先配置环境和新输出目录。test:blog 模拟 HTTP 响应，验证登录/CSRF、创建/编辑/发布/公开访问的请求契约、版本号、筛选分页、异常/取消和安全 Markdown 渲染。未配置数据库时 PostgreSQL 集成测试会 SKIP。
 
 生产环境将同域 `/api/` 代理到 Go，保留 Origin 和 Cookie；前端使用构建生成的页面 HTML，未知路径返回 404。正式构建需要 VITE_SITE_URL、SEO_API_ORIGIN 和新的输出目录，详细步骤见 [SEO 与链接分享](../docs/seo-and-sharing.md)。后端配置 HTTPS ALLOWED_ORIGIN、APP_ENV=production 和 Secure Cookie。Vite dev proxy 不随构建部署。
 
@@ -95,4 +97,4 @@ pnpm build --outDir dist/releases/release-001
 - `/admin`：Go API 站长登录、文章编辑与发布。
 - `/admin/local`：保留原本的本地草稿、预览与 Markdown 导出；从文章管理页进入，浏览器草稿 key 不变。
 - `/about` 和音乐页人物布局保留。音乐推荐使用当前 Go API，同时保留开发环境显式 local fallback、超时取消及收藏快照。
-- `npm run test:music` 同时执行两分支的音乐测试。
+- `pnpm run test:music` 同时执行两分支的音乐测试。

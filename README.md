@@ -1,5 +1,7 @@
 # blog-website
 
+> 包管理器统一使用 **pnpm**。安装、开发、测试与构建遵循 [包管理约定](docs/package-manager.md)；历史 npm 命令不作为后续操作指引。
+
 个人博客与音乐网站，使用 Vue 3 + TypeScript + Vite、Go + Gin + GORM 和 PostgreSQL。
 
 ## 当前进度

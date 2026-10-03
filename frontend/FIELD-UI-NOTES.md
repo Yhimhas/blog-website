@@ -1,11 +1,13 @@
 # FIELD UI 前端接入说明
 
+> 本文主要保留历史接入与验收记录；当前包管理和构建方式见 [包管理约定](../docs/package-manager.md)及 [SEO 构建说明](../docs/seo-and-sharing.md)。历史测试命令不作为当前操作指引。
+
 更新日期：2026-09-16。本文描述当前 0.1.1 接入状态。
 
 ## 运行与构建
 
 - 在 frontend 中运行 `pnpm dev --host 127.0.0.1`。
-- 类型检查与生产构建：`pnpm run build -- --emptyOutDir=false`。保留该参数，避免构建清空已有 dist 文件。
+- 类型检查：`pnpm run type-check`。正式构建先配置 SEO 环境，再运行 `pnpm run build --outDir dist/releases/release-001`，每次更换新空目录。Vite 已设置 `emptyOutDir: false`，不清理旧产物。
 - 项目声明 Node `^22.18.0 || >=24.12.0`；本次环境为 Node 20.19.5、pnpm 10.29.3，有 engine 警告，但 vue-tsc 和 Vite 构建通过。
 - `@field-lab/vue` 来自 `vendor/field-lab-vue-0.1.1.tgz`，package.json、pnpm-lock.yaml 和已安装版本一致。没有使用个人 skill 目录的绝对路径作为依赖。
 - tarball SHA-256：`8a5a96036657a159cba74e6ad8a8d52860e50e64df1fb789a3721538d346b0e8`，与 skill 来源记录相符。

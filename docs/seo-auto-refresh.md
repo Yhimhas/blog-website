@@ -1,5 +1,7 @@
 # SEO 自动刷新操作说明
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 更新日期：2026-10-03。静态页面和元信息说明见 [SEO 与链接分享](seo-and-sharing.md)。本文描述当前实现与安装步骤；提供模板不表示已经启用生产服务。
 
 ## 触发与一致性
@@ -28,7 +30,7 @@
    go build -o ../../bin/seo-refresh ./cmd/seo-refresh
    ```
 
-2. 在 `frontend/` 按 lockfile 安装完整依赖，包括构建使用的 devDependencies，运行 `npm run type-check`、`npm run test:seo`。服务的非交互 PATH 必须包含 npm 和 package.json 支持的 Node.js；Go API 的工具 PATH 不代表 Worker 的 PATH。
+2. 在 `frontend/` 使用 `pnpm install --frozen-lockfile` 按 lockfile 安装完整依赖，包括构建使用的 devDependencies，运行 `pnpm run type-check`、`pnpm run test:seo`。人工操作及 Worker 均使用 pnpm，其非交互 PATH 须包含 package.json 固定版本的 pnpm 和受支持的 Node.js（见 [包管理约定](package-manager.md)）；Go API 的工具 PATH 不代表 Worker 的 PATH。
 3. 将 [环境示例](../deploy/seo-refresh.env.example) 复制到仓库外的 `blog-web/seo-refresh.env`，权限 0600，替换数据库凭据与正式域名。API 和 Worker 使用同一 DATABASE_URL/search_path。binary 读取进程环境，不自动读 `.env`；systemd 通过 EnvironmentFile 加载。
 4. releases、current、assets 设置为三个互不包含的路径，Worker 用户可写、Nginx 用户可读。默认相对路径从 service 的 WorkingDirectory 解析。首次使用一个尚不存在的 current 路径或合法 symlink；不要把现有普通站点目录作为 current，Worker 不会移动或删除它。
 5. 将 [service](../deploy/seo-refresh.service) 与 [timer](../deploy/seo-refresh.timer) 复制到用户 `.config/systemd/user/`，调整路径。需要退出登录后继续运行时，由管理员配置该用户的 linger。执行：
@@ -50,8 +52,8 @@
 - 无凭据 `GET /api/v1/seo/revision` 仅返回 sourceId/字符串 revision，不返回任务错误或路径。内存 Demo 不提供此接口，不能用于正式 SEO 构建。
 - 管理员 `GET /api/v1/admin/seo` 返回 revision、appliedRevision、lastAttemptAt、publishedAt、lastError。目标版本大于确认版本表示待刷新；版本相等且无错误表示已确认。普通用户无权查看状态。
 - 后台文章管理直接展示上述状态，每 5 秒检查一次，可点击「刷新静态状态」手动复查。发布/归档成功后立即清除旧确认并显示待更新，再读取最新状态；旧请求不能覆盖新的待更新提示。未执行过任务时提醒确认自动刷新服务启用，失败时提示检查发布任务；接口失败或旧后台缺少此接口时显示「无法确认」，不将数据库成功误报为静态访问已生效。退出登录或离开管理页会停止检查并取消请求。
-- 在服务运行目录、加载同一进程环境后执行 `seo-refresh --status` 可只读查看数据库状态。故障先检查 service 日志、API `/ready`、Node/npm PATH、域名、权限及 manifest；不修改 appliedRevision 来伪造成功。失败目录保留，下次使用新目录。
-- systemd 的 control-group 在任务中断时结束该任务的 npm/Vite 子进程，不结束其他应用。CLI 也在超时/退出时取消构建进程组。任务默认最长 5 分钟，SEO_BUILD_TIMEOUT 可设为 1 秒至 30 分钟。
+- 在服务运行目录、加载同一进程环境后执行 `seo-refresh --status` 可只读查看数据库状态。故障先检查 service 日志、API `/ready`、Node/pnpm PATH、域名、权限及 manifest；不修改 appliedRevision 来伪造成功。失败目录保留，下次使用新目录。
+- systemd 的 control-group 在任务中断时结束该任务的 pnpm/Vite 子进程，不结束其他应用。CLI 也在超时/退出时取消构建进程组。任务默认最长 5 分钟，SEO_BUILD_TIMEOUT 可设为 1 秒至 30 分钟。
 - 仅前端源码变化不会增加文章版本。完成源码、依赖及检查后，在相同运行目录和配置下执行 `seo-refresh --force`；它仍遵守互斥和公开版本保护。强制发布失败须修复后重新执行 `--force`；普通 timer 只负责公开内容版本的收敛。
 - 回退前端时保留历史目录，回退源码后执行 `--force`，重新生成当前公开版本。直接设旧目录为 root 可能恢复已归档文章，不能作为内容安全回退。所有失败构建、旧目录与 staging 文件均保留，由站长审查后处理。
 
@@ -63,7 +65,7 @@
 - 本机未配置 TEST_DATABASE_URL 时 PostgreSQL 用例 SKIP，Windows 同样跳过 Linux 切换；后续服务器隔离验证实际运行 PostgreSQL/Linux race 测试，28 项通过、零 SKIP，包含事务、并发锁、互斥、失败重试、事件合并、切换和中断恢复。服务器 vet、三个后端命令构建、前端类型检查及 8 项 SEO 测试也通过，详见 [服务器记录](seo-server-validation-20261003.md)。
 - 初次 SSH 超时后，经同一服务器的 IPv6 连接成功完成上述验证；后续连接又持续超时。未改动正式部署，实际 CLI/systemd/Nginx 整套闭环仍待验收，不把 fixture 构建的 Worker 测试记作真实 Vite 服务闭环。
 
-在 Linux 的独立测试库设置 `TEST_DATABASE_URL`、`ALLOW_TEST_SCHEMA_CREATE=true`，执行 `go test -race ./internal/seo ./internal/storage ./internal/platform`。每次创建并保留独立 schema，不 DROP。可设置 `SEO_TEST_OUTPUT` 指定保留文件目录；真实构建测试执行 `npm run test:seo:build`，所有输出保留。
+在 Linux 的独立测试库设置 `TEST_DATABASE_URL`、`ALLOW_TEST_SCHEMA_CREATE=true`，执行 `go test -race ./internal/seo ./internal/storage ./internal/platform`。每次创建并保留独立 schema，不 DROP。可设置 `SEO_TEST_OUTPUT` 指定保留文件目录；真实构建测试执行 `pnpm run test:seo:build`，所有输出保留。
 
 生产验收应完成发布 → 保存修订（静态保持旧版）→ 发布修订 → 归档，逐步等待 revision=appliedRevision，检查首屏 HTML、sitemap 和归档地址 404；构建中再次发布确认过期产物不切换，停止/重启 Worker 确认 pending 保留。验收还须覆盖原站点 assets 迁移、未知路由 HTTP 404 和 CDN 缓存。
 

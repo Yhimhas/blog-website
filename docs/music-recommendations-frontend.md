@@ -1,5 +1,7 @@
 # 每日推荐前端适配
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 `MusicView.vue` 使用 `useMusicRecommendations.ts` 管理状态，`musicRecommendations.ts` 负责同源 GET、响应校验和 DTO 映射。未配置时使用 API；开发环境只有显式设置 `VITE_MUSIC_RECOMMENDATIONS_SOURCE=local` 才使用原有 `dailySelection`。生产构建始终使用 API。
 
 本地开发可在 frontend 的 `.env.local` 中设置以下内容，然后重启 Vite：
@@ -48,8 +50,8 @@ VITE_MUSIC_RECOMMENDATIONS_SOURCE=local
 
 ```powershell
 node --experimental-strip-types --test scripts/music-daily.test.mjs scripts/music-recommendations.test.mjs
-npm run type-check
-npm run build
+pnpm run type-check
+pnpm run build
 ```
 
 Vite 配置禁用清空 dist，以遵守不删除现有文件的要求；旧哈希产物可能保留。自动化测试覆盖 DTO、失败不 fallback、四态、重试、超时、跨日取消、迟到响应和卸载。真实后端联调需另行验证，不将 mock 测试当成真实推荐服务可用的证明。

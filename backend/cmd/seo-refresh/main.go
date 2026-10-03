@@ -84,7 +84,7 @@ func run(ctx context.Context, logger *slog.Logger, force, status bool) error {
 	worker := seo.Worker{DB: db, Origin: strings.TrimSuffix(origin, "/"), Force: force, Logger: logger,
 		Layout: seo.Layout{Releases: os.Getenv("SEO_RELEASES_DIR"), Current: os.Getenv("SEO_CURRENT_LINK"), Assets: os.Getenv("SEO_ASSETS_DIR")},
 		Build: func(ctx context.Context, release string) error {
-			command := exec.CommandContext(ctx, "npm", "run", "build-only", "--", "--mode", "production", "--outDir", release, "--configLoader", "runner")
+			command := exec.CommandContext(ctx, "pnpm", "run", "build-only", "--mode", "production", "--outDir", release, "--configLoader", "runner")
 			command.Dir = frontend
 			// The frontend build does not need database or account credentials.
 			for _, entry := range os.Environ() {
@@ -94,10 +94,10 @@ func run(ctx context.Context, logger *slog.Logger, force, status bool) error {
 				}
 			}
 			command.Stdout, command.Stderr = os.Stdout, os.Stderr
-			// Kill the npm process group on timeout/termination, including Vite.
+			// Kill the pnpm process group on timeout/termination, including Vite.
 			configureCommand(command)
 			if err := command.Run(); err != nil {
-				return fmt.Errorf("npm production build: %w", err)
+				return fmt.Errorf("pnpm production build: %w", err)
 			}
 			return nil
 		},

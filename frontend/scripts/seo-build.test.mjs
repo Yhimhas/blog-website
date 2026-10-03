@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontend = fileURLToPath(new URL('..', import.meta.url))
@@ -11,6 +11,11 @@ const origin = 'https://example.test'
 const sourceId = '11111111-2222-3333-4444-555555555555'
 
 test('production outputs follow publication, update and archive; a late mutation rejects the build', { timeout: 180000 }, async t => {
+  // Use the actual package-manager chain, including check:content, instead of
+  // bypassing package scripts with a direct Vite invocation. Node launches the
+  // pnpm JS entry on Windows too, without shell quoting of output paths.
+  const pnpmEntry = process.env.npm_execpath
+  assert.ok(pnpmEntry && /^pnpm\.(?:c|m)?js$/.test(basename(pnpmEntry)), 'Run this test through pnpm run test:seo:build')
   let revision = 1
   let posts = [{ slug: 'refresh-test', title: 'Published title', summary: 'summary', contentMarkdown: '# Published body',
     publishedAt: '2026-10-03T01:00:00Z', updatedAt: '2026-10-03T01:00:00Z' }]
@@ -36,12 +41,12 @@ test('production outputs follow publication, update and archive; a late mutation
   const children = new Set()
   t.after(() => { for (const child of children) child.kill() })
   await mkdir(join(frontend, 'dist'), { recursive: true })
-  const root = await mkdtemp(join(frontend, 'dist/seo-refresh-validation-'))
+  const root = await mkdtemp(join(frontend, 'dist/seo-refresh-pnpm validation-'))
   t.diagnostic(`Retained build validation outputs: ${root}`)
   const apiOrigin = `http://127.0.0.1:${server.address().port}`
   async function build(name, expected = 0) {
     const directory = join(root, name)
-    const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--mode', 'production', '--configLoader', 'runner', '--outDir', directory], {
+    const child = spawn(process.execPath, [pnpmEntry, 'run', 'build-only', '--mode', 'production', '--configLoader', 'runner', '--outDir', directory], {
       cwd: frontend, env: { ...process.env, VITE_SITE_URL: origin, SEO_API_ORIGIN: apiOrigin }, stdio: ['ignore', 'pipe', 'pipe'],
     })
     children.add(child)

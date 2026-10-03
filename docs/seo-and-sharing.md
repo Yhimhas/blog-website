@@ -1,5 +1,7 @@
 # SEO 与链接分享
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 当前实现是 Vue + Vite SPA，没有引入 Nuxt SSR。构建插件从 Go 的公开文章 API 分页读取全部文章，生成首页、博客、音乐、关于和每篇文章的 HTML 快照。首个 HTTP 响应包含 title、description、canonical、Open Graph、Twitter Card；文章还有 BlogPosting JSON-LD、摘要和安全渲染的 Markdown 正文。Vue 挂载后接管页面，站内导航同步更新同一组元信息。文章发布、发布修订和归档由数据库持久记录，启用 [SEO Worker](seo-auto-refresh.md) 后自动重建并切换目录。
 
 分享图片复用 `frontend/public/yhimhas-logo.jpg`，使用适合方形标志的 summary 卡片。canonical 和分享图片使用配置的公开站点 origin，去掉列表筛选参数和 fragment。`/login`、`/admin`、`/admin/local`、未知页面和文章加载失败状态设为 noindex，sitemap 仅包含公开页面与当前公开文章，文章 lastmod 使用 API 的 updatedAt。robots 允许爬虫访问登录等页面以读取 noindex，不将 robots 当作访问权限控制。
@@ -14,8 +16,8 @@
 在 `frontend/` 执行，输出目录名按本次发布编号设置：
 
 ```sh
-npm run test:seo
-npm run build -- --outDir dist/releases/release-001
+pnpm run test:seo
+pnpm run build --outDir dist/releases/release-001
 ```
 
 必须使用新的空输出目录，不能把新文件覆盖发布到包含旧 HTML 的目录。否则已下架的文章可能继续被抓取。插件发现目标目录非空时会拒绝正式构建；发布失败也应换新目录重试。不会删除旧目录。API 超时、请求失败、无效详情、重复 slug 或分页不完整都会中止构建。读取开始、结束和文件全部写完后检查公开版本，能检测总数不变的修改；正式输出包含记录 sourceId、字符串 revision、origin、preview 和文件清单的 `seo-release.json`。手工构建用于检查，正式切换统一交给 Worker，避免最终检查与切换之间出现新提交。
@@ -23,7 +25,7 @@ npm run build -- --outDir dist/releases/release-001
 仅本地验证、没有 API 时可以运行：
 
 ```sh
-npm run build -- --mode development --outDir dist/seo-preview
+pnpm run build --mode development --outDir dist/seo-preview
 ```
 
 该模式输出 noindex、禁止抓取的 robots 和空 sitemap，不读取本地示例文章，不能作为正式发布。`vite preview` 仅检查静态产物；正式 HTTP 状态码与重定向须使用实际 Web 服务器验收。

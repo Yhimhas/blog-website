@@ -1,5 +1,7 @@
 # 音乐站内播放实施计划
 
+> 后续操作统一使用 pnpm，见 [包管理约定](package-manager.md)。下文验收部分的 npm 命令保留为当时执行记录。
+
 > 历史方案／设计资料，保留原文。当前实现统一见 [项目当前状态](project-status.md)（2026-10-02）；下文的技术选型、待实现事项和阶段状态只代表编写时点。
 
 日期：2026-09-28。状态：基于当前代码核查的实施计划，尚未实现或验证播放。
@@ -185,9 +187,9 @@ go vet ./...
 go build ./...
 
 # frontend
-npm run test:music
-npm run type-check
-npm run build
+pnpm run test:music
+pnpm run type-check
+pnpm run build
 ```
 
 上线必须额外人工验证：一首完整播放、连续播放超过 10 分钟、快速切歌 20 次、4 路并发及第 5 路受限、网络断开/暂停恢复、桌面 Chrome/Edge 和真实手机 Safari/Chrome。首个可用音源的起播耗时先以 10 次样本记录，不将未知网络环境下的“秒开”写成承诺。
