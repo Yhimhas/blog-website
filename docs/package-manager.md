@@ -2,7 +2,7 @@
 
 生效日期：2026-10-03。适用于开发者、AI 助手、测试、构建及后续部署脚本。
 
-本项目使用 pnpm，唯一前端依赖锁文件为 `frontend/pnpm-lock.yaml`。`frontend/package.json` 的 `packageManager` 固定 pnpm 11.19.0。系统存在 npm 不代表项目使用 npm。不得因旧文档或命令习惯切换包管理器，也不要新增 `package-lock.json` 或 `yarn.lock`；已有文件如需清理，必须先向用户确认。
+本项目使用 pnpm，唯一前端依赖锁文件为 `frontend/pnpm-lock.yaml`。`frontend/package.json` 的 `engines.pnpm` 要求 `>=11.19.0`，不固定具体版本，不声明精确版本的 `packageManager`。服务器已有 pnpm 12.4.1 满足该范围，无须为了版本约定降级到 11.19.0。系统存在 npm 不代表项目使用 npm。不得因旧文档或命令习惯切换包管理器，也不要新增 `package-lock.json` 或 `yarn.lock`；已有文件如需清理，必须先向用户确认。
 
 ## 常用命令
 
@@ -44,7 +44,9 @@ pnpm run build --outDir dist/releases/release-001
 
 [package.json](../frontend/package.json) 的 `build-only` 通过 pnpm 执行内容检查，[SEO Worker](../backend/cmd/seo-refresh/main.go) 通过 `pnpm run build-only` 启动正式构建，参数直接传入，不使用 npm 的额外 `--`。`npm-run-all2` 是支持 pnpm 的脚本调度工具，包名不代表会切换到 npm。
 
-服务的非交互 PATH 必须包含指定版本的 pnpm 和受支持的 Node.js；升级 Worker 后需重新构建其二进制并按既有流程部署。本次源码修改不代表运行中的服务器已升级。
+服务的非交互 PATH 必须包含满足 `engines.pnpm` 范围的 pnpm 和受支持的 Node.js；升级 Worker 后需重新构建其二进制并按既有流程部署。本次源码修改不代表运行中的服务器已升级。
+
+版本范围包含后续大版本，不代表所有版本都已经通过本项目验收。切换 pnpm 大版本时使用现有冻结锁文件安装、测试和构建验证；历史记录中的 11.19.0 是当时实际使用的版本，保留原样。
 
 `pnpm run test:seo:build` 使用 pnpm 的实际入口和 package scripts 验证正式构建，同时覆盖带空格的输出路径；不再绕过脚本直接调用 Vite。历史验收结果仍按原执行范围解读。
 

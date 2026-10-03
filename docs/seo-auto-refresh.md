@@ -30,7 +30,7 @@
    go build -o ../../bin/seo-refresh ./cmd/seo-refresh
    ```
 
-2. 在 `frontend/` 使用 `pnpm install --frozen-lockfile` 按 lockfile 安装完整依赖，包括构建使用的 devDependencies，运行 `pnpm run type-check`、`pnpm run test:seo`。人工操作及 Worker 均使用 pnpm，其非交互 PATH 须包含 package.json 固定版本的 pnpm 和受支持的 Node.js（见 [包管理约定](package-manager.md)）；Go API 的工具 PATH 不代表 Worker 的 PATH。
+2. 在 `frontend/` 使用 `pnpm install --frozen-lockfile` 按 lockfile 安装完整依赖，包括构建使用的 devDependencies，运行 `pnpm run type-check`、`pnpm run test:seo`。人工操作及 Worker 均使用 pnpm，其非交互 PATH 须包含满足 package.json 中 `engines.pnpm`（`>=11.19.0`）的 pnpm 和受支持的 Node.js（见 [包管理约定](package-manager.md)）；Go API 的工具 PATH 不代表 Worker 的 PATH。
 3. 将 [环境示例](../deploy/seo-refresh.env.example) 复制到仓库外的 `blog-web/seo-refresh.env`，权限 0600，替换数据库凭据与正式域名。API 和 Worker 使用同一 DATABASE_URL/search_path。binary 读取进程环境，不自动读 `.env`；systemd 通过 EnvironmentFile 加载。
 4. releases、current、assets 设置为三个互不包含的路径，Worker 用户可写、Nginx 用户可读。默认相对路径从 service 的 WorkingDirectory 解析。首次使用一个尚不存在的 current 路径或合法 symlink；不要把现有普通站点目录作为 current，Worker 不会移动或删除它。
 5. 将 [service](../deploy/seo-refresh.service) 与 [timer](../deploy/seo-refresh.timer) 复制到用户 `.config/systemd/user/`，调整路径。需要退出登录后继续运行时，由管理员配置该用户的 linger。执行：

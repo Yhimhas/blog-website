@@ -13,4 +13,4 @@
 - pnpm 不可用时，先核对 PATH 和现有安装，报告阻塞；不能擅自改用 npm。
 - 问题结论必须基于 pnpm 的复现结果。npm 下失败不能直接当作本项目构建失败。
 - 历史验收记录中的 npm 命令保留为事实记录，不作为后续操作指引。新增文档和脚本使用 pnpm。
-- pnpm 版本由 `frontend/package.json` 的 `packageManager` 固定；构建脚本及 SEO Worker 同样使用 pnpm，不回退 npm。详情见 [包管理约定](docs/package-manager.md)。
+- pnpm 版本遵循 `frontend/package.json` 的 `engines.pnpm`：`>=11.19.0`，不固定具体版本，也不新增精确版本的 `packageManager` 声明。构建脚本及 SEO Worker 同样使用 pnpm，不回退 npm。详情见 [包管理约定](docs/package-manager.md)。

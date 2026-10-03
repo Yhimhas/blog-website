@@ -2,6 +2,8 @@
 
 本次完成此前剩余的「后台 API → pnpm production 构建 → SEO Worker → systemd timer → Nginx 静态页面」隔离闭环。源码基线为 `fd80739`，包含 pnpm 统一和后台静态状态／会话提示更新。未部署正式服务。
 
+> 后续版本约定已调整为 `engines.pnpm >=11.19.0`，见 [包管理约定](package-manager.md)。本文中的固定 11.19.0 和隔离 launcher 描述当时实际验收环境，不再作为后续版本要求，也不代表 12.4.1 已通过相同闭环。
+
 ## 环境与边界
 
 - 本次通过已配置的 IPv4 SSH 直接连接成功，未修改 SSH、Tailscale、路由或防火墙配置。
@@ -40,7 +42,7 @@
 - 既有服务的回环 18081 ready 在验证前后均为 200；原有运行容器不变。服务器原项目工作区仍干净，提交仍为 `a08eb0d`。
 - 没有迁移 `blog_dev`，没有启用正式 timer、替换正式 Web root、重启原服务或上传覆盖原项目。
 
-现在已有实际 CLI/systemd/Nginx 的隔离验收证据；生产仍需按 [自动刷新操作说明](seo-auto-refresh.md) 配置固定版本 pnpm 与非交互 PATH、冻结锁文件安装、迁移应用库、接入真实入口，并核验原站点 assets 迁移、HTTPS、CDN 缓存及搜索／分享平台。隔离成功不表示生产已启用。
+现在已有实际 CLI/systemd/Nginx 的隔离验收证据；生产仍需按 [自动刷新操作说明](seo-auto-refresh.md) 配置满足 `engines.pnpm` 范围的 pnpm 与非交互 PATH、冻结锁文件安装、迁移应用库、接入真实入口，并核验原站点 assets 迁移、HTTPS、CDN 缓存及搜索／分享平台。隔离成功不表示生产已启用。
 
 ## 保留产物
 
