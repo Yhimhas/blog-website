@@ -10,6 +10,7 @@
 
 ## 开发与操作入口
 
+- [歌单自动同步与下一阶段功能方案](docs/music-sync-and-feature-roadmap-20261004.md)：待实施的同步架构、功能优先级、布局前准备与验收。
 - [Docker 部署与回退手册](docs/docker-deployment.md)与[本次部署验收](docs/docker-deployment-validation-20261003.md)：当前 Tailscale HTTPS 入口、自启、备份和回退。
 - [前端 README](frontend/README.md)：开发启动、页面行为与构建。
 - [后端 README](backend/README.md)：环境、迁移、账号、API 和测试。
